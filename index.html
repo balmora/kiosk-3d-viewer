@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Kiosk 3D Viewer</title>
+  <link rel="icon" href="data:,">
+  <style>
+    body { margin: 0; overflow: hidden; background: #111; font-family: sans-serif; }
+    canvas { display: block; touch-action: none; }
+    #ui, #ai-ui {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 8px;
+      background: rgba(0,0,0,0.5);
+      padding: 10px;
+      border-radius: 10px;
+    }
+    #ui { bottom: 60px; }
+    #ai-ui { bottom: 10px; }
+    #ui button, #ai-ui button {
+      background: #222;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      padding: 6px 12px;
+    }
+    #ui button:hover, #ai-ui button:hover { background: #444; }
+    #ai-ui input {
+      padding: 6px 8px;
+      border-radius: 6px;
+      border: none;
+      font-size: 14px;
+      width: 200px;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="viewer"></canvas>
+  <div id="ui"></div>
+  <div id="ai-ui">
+    <input type="text" id="aiPrompt" placeholder="Ask AI to trigger animation">
+    <button id="aiSend">Send</button>
+  </div>
+
+  <!-- ✅ Import map - must come BEFORE any module scripts -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./libs/three/build/three.module.js",
+        "three/addons/": "./libs/three/examples/jsm/"
+      }
+    }
+  </script>
+
+  <script type="module" src="./js/main.js"></script>
+</body>
+</html>
