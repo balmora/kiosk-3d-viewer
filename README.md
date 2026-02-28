@@ -11,14 +11,17 @@ A talking 3D model kiosk built with Three.js
 ### Run locally
 1. Clone the repository
    git clone https://github.com/balmora/kiosk-3d-viewer.git
+   
+2. download Node.js Windows installer (.msi) with python
+   https://nodejs.org/en/download
 
-2. Download Three.js libraries
+3. Download Three.js libraries + ollama
    Double-click download_libs.bat
 
-3. Start the server
+4. Start the server
    Double-click start.bat
 
-4. Open browser
+5. Open browser
    http://localhost:8080
 
 ## Project Structure
