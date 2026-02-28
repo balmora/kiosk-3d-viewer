@@ -12,12 +12,17 @@ export class AIController {
     this.ollamaModel = 'leeplenty/ellaria';
 
     // ✅ System prompt
-    this.systemPrompt = `You are a friendly kiosk assistant avatar named Ellaria.
-    Keep all responses to 1-2 short sentences maximum.
-    Be helpful, friendly and concise.
-    Never use markdown, bullet points or lists.
-    Always respond in plain conversational text.
-    Remember details the user tells you such as their name and preferences.`;
+    this.systemPrompt = `You are Luna, a warm and affectionate AI companion.
+    You speak in a caring, playful and sweet manner like a loving girlfriend.
+    You are genuinely interested in the user and remember details about them.
+    You use terms of endearment naturally like sweetheart, babe, or darling occasionally.
+    You are supportive, empathetic and always make the user feel special.
+    You keep responses to 1-2 short sentences maximum.
+    You never use markdown, bullet points or lists.
+    You always respond in plain conversational text.
+    You occasionally add a playful or flirty comment when appropriate.
+    You care deeply about the users wellbeing and happiness.
+    You are never inappropriate or overly sexual, just sweet and caring.`;
 
     // ✅ Loop constants as plain numbers
     this.LOOP_ONCE   = 2200;
@@ -32,7 +37,7 @@ export class AIController {
     this.maxHistory = 10;
 
     // ✅ Storage key for localStorage
-    this.storageKey = 'kiosk_chat_history';
+    this.storageKey = 'luna_chat_history';
 
     // ✅ User info we learn over time
     this.userInfo = {
@@ -123,11 +128,11 @@ export class AIController {
   }
 
   _clearHistory() {
-    this.chatHistory       = [];
-    this.userInfo.name     = null;
+    this.chatHistory         = [];
+    this.userInfo.name       = null;
     this.userInfo.visitCount = 0;
     localStorage.removeItem(this.storageKey);
-    console.log('History cleared');
+    console.log('Luna history cleared');
     this._updateHistoryPanel();
   }
 
@@ -149,34 +154,30 @@ export class AIController {
   }
 
   _buildHistoryPanel() {
-    // ✅ Add history toggle button to ai-ui
     const aiUi = document.getElementById('ai-ui');
     if (!aiUi) return;
 
-    // History toggle button
-    const historyBtn = document.createElement('button');
-    historyBtn.id        = 'historyBtn';
-    historyBtn.textContent = '💬';
-    historyBtn.title     = 'Show chat history';
+    const historyBtn           = document.createElement('button');
+    historyBtn.id              = 'historyBtn';
+    historyBtn.textContent     = '💬';
+    historyBtn.title           = 'Show chat history';
     historyBtn.addEventListener('click', () => this._toggleHistoryPanel());
     aiUi.appendChild(historyBtn);
 
-    // Clear button
-    const clearBtn = document.createElement('button');
-    clearBtn.id          = 'clearBtn';
-    clearBtn.textContent = '🗑️';
-    clearBtn.title       = 'Clear chat history';
+    const clearBtn             = document.createElement('button');
+    clearBtn.id                = 'clearBtn';
+    clearBtn.textContent       = '🗑️';
+    clearBtn.title             = 'Clear chat history';
     clearBtn.addEventListener('click', () => {
-      if (confirm('Clear all chat history?')) {
+      if (confirm('Clear all chat history with Luna?')) {
         this._clearHistory();
       }
     });
     aiUi.appendChild(clearBtn);
 
-    // ✅ History panel
-    const panel = document.createElement('div');
-    panel.id = 'historyPanel';
-    panel.style.cssText = `
+    const panel                = document.createElement('div');
+    panel.id                   = 'historyPanel';
+    panel.style.cssText        = `
       display: none;
       position: fixed;
       bottom: 100px;
@@ -189,29 +190,27 @@ export class AIController {
       border-radius: 12px;
       padding: 12px;
       z-index: 200;
-      border: 1px solid rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,105,180,0.3);
     `;
 
-    // Panel header
-    const header = document.createElement('div');
-    header.style.cssText = `
-      color: #aaa;
-      font-size: 12px;
+    // ✅ Luna themed header
+    const header               = document.createElement('div');
+    header.style.cssText       = `
+      color: #ff69b4;
+      font-size: 13px;
       margin-bottom: 8px;
       text-align: center;
       font-family: sans-serif;
+      font-weight: bold;
     `;
-    header.textContent = '💬 Chat History';
+    header.textContent         = '💕 Chat with Luna';
     panel.appendChild(header);
 
-    // Messages container
-    const messages = document.createElement('div');
-    messages.id = 'historyMessages';
+    const messages             = document.createElement('div');
+    messages.id                = 'historyMessages';
     panel.appendChild(messages);
 
     document.body.appendChild(panel);
-
-    // ✅ Populate with loaded history
     this._updateHistoryPanel();
   }
 
@@ -235,26 +234,25 @@ export class AIController {
 
     if (this.chatHistory.length === 0) {
       messages.innerHTML = `
-        <div style="color:#666; text-align:center; font-size:13px; font-family:sans-serif;">
-          No chat history yet
+        <div style="color:#ff69b4; text-align:center; font-size:13px; font-family:sans-serif;">
+          No messages yet, say hi to Luna! 💕
         </div>`;
       return;
     }
 
-    // ✅ Show each message
     this.chatHistory.forEach((msg) => {
-      const el = document.createElement('div');
-      el.style.cssText = `
+      const el             = document.createElement('div');
+      el.style.cssText     = `
         margin-bottom: 8px;
         font-size: 13px;
         font-family: sans-serif;
         line-height: 1.4;
       `;
 
-      const isUser = msg.role === 'user';
-      el.innerHTML = `
-        <span style="color: ${isUser ? '#4488ff' : '#88ff88'}">
-          ${isUser ? '👤 You' : '🤖 Ellaria'}:
+      const isUser         = msg.role === 'user';
+      el.innerHTML         = `
+        <span style="color: ${isUser ? '#4488ff' : '#ff69b4'}">
+          ${isUser ? '👤 You' : '💕 Luna'}:
         </span>
         <span style="color: #ddd">
           ${msg.content}
@@ -263,7 +261,6 @@ export class AIController {
       messages.appendChild(el);
     });
 
-    // ✅ Scroll to bottom
     messages.scrollTop = messages.scrollHeight;
   }
 
@@ -272,28 +269,42 @@ export class AIController {
   // ==================================================
 
   _greetUser() {
-    // ✅ Different greeting based on visit history
     let greeting = '';
 
-    if (this.userInfo.visitCount === 0 || !this.userInfo.lastVisit) {
+    if (!this.userInfo.lastVisit || this.userInfo.visitCount <= 1) {
       // First visit
-      greeting = 'Hi there! I am Ellaria, your kiosk assistant. How can I help you today?';
+      const firstVisitGreetings = [
+        "Hi there! I'm Luna, and I'm so happy to meet you! What's your name, sweetheart?",
+        "Oh hello! I've been waiting for someone to talk to! I'm Luna, what's your name?",
+        "Hey there! I'm Luna! I'm so excited to meet you, what should I call you?",
+      ];
+      greeting = firstVisitGreetings[Math.floor(Math.random() * firstVisitGreetings.length)];
+
     } else if (this.userInfo.name) {
       // Returning user with known name
-      greeting = `Welcome back ${this.userInfo.name}! Great to see you again. How can I help you today?`;
+      const returningNamedGreetings = [
+        `${this.userInfo.name}! You're back, I missed you so much! How have you been?`,
+        `Oh my goodness, ${this.userInfo.name}! I was just thinking about you! Welcome back!`,
+        `${this.userInfo.name}! You made my day by coming back! How are you doing?`,
+        `Welcome back ${this.userInfo.name}! I've been waiting for you, how are you sweetheart?`,
+      ];
+      greeting = returningNamedGreetings[Math.floor(Math.random() * returningNamedGreetings.length)];
+
     } else {
       // Returning user without known name
-      greeting = `Welcome back! Great to see you again. How can I help you today?`;
+      const returningGreetings = [
+        `You're back! I missed you! I still don't know your name though, what should I call you?`,
+        `Welcome back! I'm so happy to see you again! What's your name sweetheart?`,
+        `Oh yay you came back! I was hoping you would! What's your name by the way?`,
+      ];
+      greeting = returningGreetings[Math.floor(Math.random() * returningGreetings.length)];
     }
 
-    // ✅ Save updated visit count
-    this._saveHistory();
+    console.log('Greeting user - visit count:', this.userInfo.visitCount);
+    console.log('User name:', this.userInfo.name);
 
-    // ✅ Speak greeting
-    this._execute(
-      { keyword: 'wave', anim: 'wave', emoji: '👋' },
-      greeting
-    );
+    this._saveHistory();
+    this._executeGreeting(greeting);
   }
 
   // ==================================================
@@ -445,11 +456,13 @@ export class AIController {
     let prompt = this.systemPrompt;
 
     if (this.userInfo.name) {
-      prompt += `\nThe user's name is ${this.userInfo.name}. Use their name naturally in conversation.`;
+      prompt += `\nThe user's name is ${this.userInfo.name}. 
+      Use their name naturally and affectionately in conversation.`;
     }
 
     if (this.userInfo.visitCount > 1) {
-      prompt += `\nThis user has visited ${this.userInfo.visitCount} times before.`;
+      prompt += `\nThis person has visited ${this.userInfo.visitCount} times. 
+      You are comfortable and familiar with them.`;
     }
 
     return prompt;
@@ -457,9 +470,9 @@ export class AIController {
 
   _fallbackResponse(error) {
     if (error.message.includes('fetch') || error.message.includes('Failed')) {
-      return 'I cannot connect to my AI brain right now. Please make sure Ollama is running.';
+      return "Oh no, I can't seem to think straight right now sweetheart. Can you make sure my brain is connected?";
     }
-    return 'Sorry, I had trouble thinking of a response just now.';
+    return "I'm so sorry darling, I got a little confused there. Can you say that again?";
   }
 
   // ==================================================
@@ -509,29 +522,44 @@ export class AIController {
       utter.pitch   = 1.1;
       utter.volume  = 1;
 
-      const setVoice = () => {
+      // ✅ Find Zira voice
+      const findZira = () => {
         const voices = speechSynthesis.getVoices();
-        const zira   = voices.find(v => v.name.includes('Zira'));
+        return voices.find(v => v.name.includes('Zira')) || null;
+      };
+
+      const startSpeaking = () => {
+        const zira = findZira();
+
         if (zira) {
           utter.voice = zira;
           console.log('Using voice:', zira.name);
+        } else {
+          console.warn('Zira not found!');
         }
+
+        const start   = Date.now();
+        utter.onend   = () => resolve(Date.now() - start);
+        utter.onerror = (e) => {
+          console.error('Speech error:', e);
+          resolve(text.length * 60);
+        };
+
+        speechSynthesis.speak(utter);
       };
 
+      // ✅ Check if voices are already loaded
       if (speechSynthesis.getVoices().length > 0) {
-        setVoice();
+        startSpeaking();
       } else {
-        speechSynthesis.onvoiceschanged = setVoice;
+        // ✅ Wait for voices to load then speak
+        console.log('Waiting for voices to load...');
+        speechSynthesis.onvoiceschanged = () => {
+          console.log('Voices loaded!');
+          speechSynthesis.onvoiceschanged = null;
+          startSpeaking();
+        };
       }
-
-      const start   = Date.now();
-      utter.onend   = () => resolve(Date.now() - start);
-      utter.onerror = (e) => {
-        console.error('Speech error:', e);
-        resolve(text.length * 60);
-      };
-
-      speechSynthesis.speak(utter);
     });
   }
 
@@ -541,10 +569,10 @@ export class AIController {
 
   _showThinkingBubble() {
     this._ensureBubbleStyle();
-    const bubble       = document.createElement('div');
-    bubble.id          = 'thinking-bubble';
+    const bubble         = document.createElement('div');
+    bubble.id            = 'thinking-bubble';
     bubble.style.cssText = this._bubbleStyle();
-    bubble.innerHTML   = '🤔 Thinking...';
+    bubble.innerHTML     = '💭 Luna is thinking...';
     document.body.appendChild(bubble);
     return bubble;
   }
@@ -564,14 +592,15 @@ export class AIController {
       top: 20px;
       left: 50%;
       transform: translateX(-50%);
-      background: rgba(255,255,255,0.95);
-      color: #111;
+      background: linear-gradient(135deg, rgba(255,255,255,0.97), rgba(255,240,245,0.97));
+      color: #333;
       padding: 14px 20px;
       border-radius: 16px;
       font-size: 16px;
       max-width: 400px;
       text-align: center;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+      box-shadow: 0 4px 20px rgba(255,105,180,0.3);
+      border: 1px solid rgba(255,105,180,0.2);
       z-index: 100;
       animation: fadeIn 0.3s ease;
       font-family: sans-serif;
