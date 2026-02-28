@@ -1,23 +1,29 @@
 import * as THREE from 'three';
+console.log('animationController.js loaded');
 
 export class AnimationController {
   constructor(mixer, clips, bones) {
-    this.mixer = mixer;
-    this.clips = clips;
-    this.bones = bones;
-    this.actions = {};
+    this.mixer     = mixer;
+    this.clips     = clips;
+    this.bones     = bones;
+    this.actions   = {};
     this.currentAction = null;
-    this.idleAction = null;
+    this.idleAction    = null;
 
     // Head bob state
-    this.headBobTime = 0;
-    this.isHeadBobbing = false;
+    this.headBobTime      = 0;
+    this.isHeadBobbing    = false;
     this.headBobIntensity = 0;
 
     // Blink state
-    this.blinkTimer = 0;
+    this.blinkTimer    = 0;
     this.nextBlinkTime = this.randomBlinkInterval();
-    this.morphTargets = {};
+    this.morphTargets  = {};
+
+    // ✅ Loop constants
+    this.LOOP_ONCE   = 2200;
+    this.LOOP_REPEAT = 2201;
+    this.LOOP_PING   = 2202;
 
     this._registerClips();
     this._buildUI();
@@ -33,7 +39,6 @@ export class AnimationController {
       this.actions[clip.name.toLowerCase()] = action;
     });
 
-    // Auto-play idle if exists
     const idleKeys = ['idle', 'breathing', 'stand'];
     for (const key of idleKeys) {
       if (this.actions[key]) {
@@ -47,22 +52,24 @@ export class AnimationController {
 
   playAnimation(name, options = {}) {
     const {
-      loop = THREE.LoopRepeat,
-      fadeIn = 0.3,
-      fadeOut = 0.3,
+      loop             = THREE.LoopRepeat,
+      fadeIn           = 0.3,
+      fadeOut          = 0.3,
       clampWhenFinished = false,
-      returnToIdle = true
+      returnToIdle     = true
     } = options;
 
-    const key = name.toLowerCase();
+    const key    = name.toLowerCase();
     const action = this.actions[key];
 
     if (!action) {
-      console.warn(`Animation "${name}" not found. Available:`, Object.keys(this.actions));
+      console.warn(
+        `Animation "${name}" not found. Available:`,
+        Object.keys(this.actions)
+      );
       return false;
     }
 
-    // Cross-fade from current
     if (this.currentAction && this.currentAction !== action) {
       this.currentAction.fadeOut(fadeOut);
     }
@@ -74,8 +81,7 @@ export class AnimationController {
     action.play();
     this.currentAction = action;
 
-    // Return to idle after one-shot animations
-    if (returnToIdle && loop === THREE.LoopOnce && this.idleAction) {
+    if (returnToIdle && loop === this.LOOP_ONCE && this.idleAction) {
       const duration = action.getClip().duration * 1000;
       setTimeout(() => {
         this.returnToIdle();
@@ -93,16 +99,15 @@ export class AnimationController {
   }
 
   startHeadBob(intensity = 1) {
-    this.isHeadBobbing = true;
+    this.isHeadBobbing    = true;
     this.headBobIntensity = intensity;
   }
 
   stopHeadBob() {
-    this.isHeadBobbing = false;
+    this.isHeadBobbing    = false;
     this.headBobIntensity = 0;
   }
 
-  // Called every frame
   update(delta) {
     this.mixer.update(delta);
     this._updateHeadBob(delta);
@@ -111,8 +116,9 @@ export class AnimationController {
 
   _updateHeadBob(delta) {
     if (!this.isHeadBobbing) return;
-
-    const headBone = this.bones['head'] || this.bones['mixamorig:head'];
+    const headBone =
+      this.bones['head'] ||
+      this.bones['mixamorig:head'];
     if (!headBone) return;
 
     this.headBobTime += delta;
@@ -125,18 +131,21 @@ export class AnimationController {
 
   _updateBlink(delta) {
     this.blinkTimer += delta;
-
     if (this.blinkTimer >= this.nextBlinkTime) {
       this._triggerBlink();
-      this.blinkTimer = 0;
+      this.blinkTimer    = 0;
       this.nextBlinkTime = this.randomBlinkInterval();
     }
   }
 
   _triggerBlink() {
-    const blinkKeys = ['blink', 'eyeblinkleft', 'eyeblinkright', 'eyes_blink'];
+    const blinkKeys = [
+      'blink',
+      'eyeblinkleft',
+      'eyeblinkright',
+      'eyes_blink'
+    ];
 
-    // Morph target blink
     blinkKeys.forEach((key) => {
       const mt = this.morphTargets[key];
       if (!mt) return;
@@ -160,58 +169,95 @@ export class AnimationController {
   }
 
   randomBlinkInterval() {
-    return 2.5 + Math.random() * 3.5; // 2.5–6 seconds
+    return 2.5 + Math.random() * 3.5;
   }
+
+  // ==================================================
+  //  UI - Animation dropdown
+  // ==================================================
 
   _buildUI() {
-    const ui = document.getElementById('ui');
-    if (!ui) return;
-    ui.innerHTML = '';
+    // ✅ Build into dropdown list instead of top bar
+    const animList = document.getElementById('animList');
+    if (!animList) {
+      console.warn('animList element not found');
+      return;
+    }
 
-    // Always add idle button
-    this._addButton(ui, '😐 Idle', () => this.returnToIdle());
+    animList.innerHTML = '';
 
-    // Add buttons for each clip
     const iconMap = {
-      wave: '👋',
-      talk: '🗣️',
-      nod: '✅',
-      shake: '❌',
-      bow: '🙇',
-      dance: '💃',
-      point: '👉',
-      think: '🤔',
+      wave:      '👋',
+      talk:      '🗣️',
+      nod:       '✅',
+      shake:     '❌',
+      bow:       '🙇',
+      dance:     '💃',
+      point:     '👉',
+      think:     '🤔',
       celebrate: '🎉',
-      sad: '😢'
+      sad:       '😢',
+      idle:      '😐'
     };
 
-    Object.keys(this.actions).forEach((name) => {
-      const icon = Object.entries(iconMap).find(([k]) =>
-        name.includes(k)
-      )?.[1] || '▶️';
-      this._addButton(ui, `${icon} ${name}`, () =>
-        this.playAnimation(name, { loop: THREE.LoopOnce })
-      );
+    // ✅ Always add idle button first
+    this._addAnimButton(animList, '😐 Idle', () => {
+      this.returnToIdle();
+      this._closeDropdown();
     });
 
-    // Manual test buttons if no clips
+    // ✅ Add button for each clip
+    Object.keys(this.actions).forEach((name) => {
+      const icon = Object.entries(iconMap).find(
+        ([k]) => name.includes(k)
+      )?.[1] || '▶️';
+
+      this._addAnimButton(animList, `${icon} ${name}`, () => {
+        // ✅ Use raw number not THREE.LoopOnce
+        this.playAnimation(name, { loop: this.LOOP_ONCE });
+        this._closeDropdown();
+      });
+    });
+
+    // ✅ Fallback buttons if no clips found
     if (Object.keys(this.actions).length === 0) {
-      this._addButton(ui, '👋 Wave', () => this._simulateWave());
-      this._addButton(ui, '✅ Nod', () => this._simulateNod());
+      this._addAnimButton(animList, '👋 Wave', () => {
+        this._simulateWave();
+        this._closeDropdown();
+      });
+      this._addAnimButton(animList, '✅ Nod', () => {
+        this._simulateNod();
+        this._closeDropdown();
+      });
     }
+
+    console.log(
+      'Animation UI built with',
+      Object.keys(this.actions).length,
+      'clips'
+    );
   }
 
-  _addButton(container, label, onClick) {
-    const btn = document.createElement('button');
+  _addAnimButton(container, label, onClick) {
+    const btn       = document.createElement('button');
+    btn.className   = 'anim-btn';
     btn.textContent = label;
     btn.addEventListener('click', onClick);
     container.appendChild(btn);
   }
 
-  // Fallback procedural animations when no clips exist
+  _closeDropdown() {
+    const dropdown = document.getElementById('animDropdown');
+    if (dropdown) dropdown.classList.remove('open');
+  }
+
+  // ==================================================
+  //  FALLBACK PROCEDURAL ANIMATIONS
+  // ==================================================
+
   _simulateWave() {
     const armBone =
-      this.bones['rightarm'] ||
+      this.bones['rightarm']          ||
       this.bones['mixamorig:rightarm'] ||
       this.bones['right_arm'];
     if (!armBone) return;
@@ -223,22 +269,6 @@ export class AnimationController {
       if (t > Math.PI * 2) {
         clearInterval(wave);
         armBone.rotation.z = 0;
-      }
-    }, 16);
-  }
-
-  _simulateNod() {
-    const headBone =
-      this.bones['head'] || this.bones['mixamorig:head'];
-    if (!headBone) return;
-
-    let t = 0;
-    const nod = setInterval(() => {
-      t += 0.2;
-      headBone.rotation.x = Math.sin(t * 3) * 0.15;
-      if (t > Math.PI * 2) {
-        clearInterval(nod);
-        headBone.rotation.x = 0;
       }
     }, 16);
   }

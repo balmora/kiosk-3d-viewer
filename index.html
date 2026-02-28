@@ -7,19 +7,20 @@
   <style>
     body { margin: 0; overflow: hidden; background: #111; font-family: sans-serif; }
     canvas { display: block; touch-action: none; }
-    #ui, #ai-ui {
+
+    #ai-ui {
       position: absolute;
       left: 50%;
       transform: translateX(-50%);
+      bottom: 10px;
       display: flex;
       gap: 8px;
       background: rgba(0,0,0,0.5);
       padding: 10px;
       border-radius: 10px;
     }
-    #ui { bottom: 60px; }
-    #ai-ui { bottom: 10px; }
-    #ui button, #ai-ui button {
+
+    #ai-ui button {
       background: #222;
       color: #fff;
       border: none;
@@ -28,7 +29,9 @@
       font-size: 14px;
       padding: 6px 12px;
     }
-    #ui button:hover, #ai-ui button:hover { background: #444; }
+
+    #ai-ui button:hover { background: #444; }
+
     #ai-ui input {
       padding: 6px 8px;
       border-radius: 6px;
@@ -36,17 +39,93 @@
       font-size: 14px;
       width: 200px;
     }
+
+    /* ✅ Animation dropdown */
+    #animDropdown {
+      display: none;
+      position: fixed;
+      bottom: 70px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.85);
+      border-radius: 12px;
+      padding: 10px;
+      z-index: 300;
+      border: 1px solid rgba(255,105,180,0.3);
+      min-width: 200px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+
+    #animDropdown.open {
+      display: block;
+      animation: dropUp 0.2s ease;
+    }
+
+    @keyframes dropUp {
+      from { opacity: 0; transform: translateX(-50%) translateY(10px); }
+      to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+    }
+
+    #animDropdown h4 {
+      color: #ff69b4;
+      margin: 0 0 8px 0;
+      font-size: 13px;
+      text-align: center;
+      font-family: sans-serif;
+      border-bottom: 1px solid rgba(255,105,180,0.2);
+      padding-bottom: 6px;
+    }
+
+    .anim-btn {
+      display: block;
+      width: 100%;
+      background: rgba(255,255,255,0.05);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      padding: 8px 12px;
+      margin-bottom: 4px;
+      text-align: left;
+      font-family: sans-serif;
+      transition: background 0.2s;
+    }
+
+    .anim-btn:hover {
+      background: rgba(255,105,180,0.2);
+      color: #ff69b4;
+    }
+
+    #animDropdown::-webkit-scrollbar {
+      width: 6px;
+    }
+    #animDropdown::-webkit-scrollbar-track {
+      background: rgba(255,255,255,0.05);
+      border-radius: 3px;
+    }
+    #animDropdown::-webkit-scrollbar-thumb {
+      background: rgba(255,105,180,0.3);
+      border-radius: 3px;
+    }
   </style>
 </head>
 <body>
   <canvas id="viewer"></canvas>
-  <div id="ui"></div>
+
+  <!-- ✅ Removed #ui div - now inside dropdown -->
+  <div id="animDropdown">
+    <h4>🎭 Animations</h4>
+    <div id="animList"></div>
+  </div>
+
   <div id="ai-ui">
     <input type="text" id="aiPrompt" placeholder="Talk to Luna...">
     <button id="aiSend">Send</button>
+    <!-- buttons added by aiController.js -->
   </div>
 
-  <!-- ✅ Import map - must come BEFORE any module scripts -->
   <script type="importmap">
     {
       "imports": {
@@ -56,6 +135,6 @@
     }
   </script>
 
-  <script type="module" src="./js/main.js"></script>
+  <script type="module" src="./js/main.js?v=4"></script>
 </body>
 </html>

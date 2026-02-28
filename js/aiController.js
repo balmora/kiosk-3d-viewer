@@ -76,10 +76,69 @@ export class AIController {
     // ✅ Build UI
     this._bindUI();
 
-    // ✅ Greet returning user after short delay
-    setTimeout(() => this._greetUser(), 1500);
+    // ✅ After - wait for first user interaction
+    this._waitForInteraction();
+  }
+  
+  // ==================================================
+  //  INTERACTION UNLOCK
+  // ==================================================
+
+  _waitForInteraction() {
+    console.log('Waiting for user interaction...');
+
+    // ✅ List of events that count as user interaction
+    const events = ['click', 'keydown', 'touchstart', 'mousedown'];
+
+    const onInteraction = () => {
+	  console.log('User interaction detected - unlocking audio');
+
+	  // ✅ Remove all listeners after first interaction
+	  events.forEach(event => {
+	    document.removeEventListener(event, onInteraction);
+	  });
+
+	  // ✅ Unlock audio context
+	  this._unlockAudio().then(() => {
+	    // ✅ Now safe to greet
+	    setTimeout(() => this._greetUser(), 500);
+	  });
+    };
+
+    // ✅ Listen for any interaction
+    events.forEach(event => {
+	  document.addEventListener(event, onInteraction, { once: false });
+    });
   }
 
+  async _unlockAudio() {
+    return new Promise((resolve) => {
+	  try {
+	    // ✅ Create and immediately resume audio context
+	    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+	    ctx.resume().then(() => {
+		  console.log('Audio context unlocked');
+		  ctx.close();
+		  resolve();
+	    });
+
+	    // ✅ Speak silent utterance to unlock speech synthesis
+	    const unlock   = new SpeechSynthesisUtterance('');
+	    unlock.volume  = 0;
+	    unlock.onend   = () => {
+	      console.log('Speech synthesis unlocked');
+		  resolve();
+	    };
+	    unlock.onerror = () => resolve();
+	    speechSynthesis.speak(unlock);
+
+	  } catch (e) {
+	    console.warn('Audio unlock error:', e);
+	    resolve();
+	  }
+    });
+  }
+  
   // ==================================================
   //  LOCAL STORAGE
   // ==================================================
@@ -157,17 +216,27 @@ export class AIController {
     const aiUi = document.getElementById('ai-ui');
     if (!aiUi) return;
 
-    const historyBtn           = document.createElement('button');
-    historyBtn.id              = 'historyBtn';
-    historyBtn.textContent     = '💬';
-    historyBtn.title           = 'Show chat history';
+    // ✅ Animations dropdown button
+    const animBtn           = document.createElement('button');
+    animBtn.id              = 'animBtn';
+    animBtn.textContent     = '🎭';
+    animBtn.title           = 'Show animations';
+    animBtn.addEventListener('click', () => this._toggleAnimDropdown());
+    aiUi.appendChild(animBtn);
+
+    // ✅ History button
+    const historyBtn        = document.createElement('button');
+    historyBtn.id           = 'historyBtn';
+    historyBtn.textContent  = '💬';
+    historyBtn.title        = 'Show chat history';
     historyBtn.addEventListener('click', () => this._toggleHistoryPanel());
     aiUi.appendChild(historyBtn);
 
-    const clearBtn             = document.createElement('button');
-    clearBtn.id                = 'clearBtn';
-    clearBtn.textContent       = '🗑️';
-    clearBtn.title             = 'Clear chat history';
+    // ✅ Clear button
+    const clearBtn          = document.createElement('button');
+    clearBtn.id             = 'clearBtn';
+    clearBtn.textContent    = '🗑️';
+    clearBtn.title          = 'Clear chat history';
     clearBtn.addEventListener('click', () => {
       if (confirm('Clear all chat history with Luna?')) {
         this._clearHistory();
@@ -175,12 +244,13 @@ export class AIController {
     });
     aiUi.appendChild(clearBtn);
 
-    const panel                = document.createElement('div');
-    panel.id                   = 'historyPanel';
-    panel.style.cssText        = `
+    // ✅ History panel
+    const panel             = document.createElement('div');
+    panel.id                = 'historyPanel';
+    panel.style.cssText     = `
       display: none;
       position: fixed;
-      bottom: 100px;
+      bottom: 70px;
       left: 50%;
       transform: translateX(-50%);
       width: 380px;
@@ -193,9 +263,8 @@ export class AIController {
       border: 1px solid rgba(255,105,180,0.3);
     `;
 
-    // ✅ Luna themed header
-    const header               = document.createElement('div');
-    header.style.cssText       = `
+    const header            = document.createElement('div');
+    header.style.cssText    = `
       color: #ff69b4;
       font-size: 13px;
       margin-bottom: 8px;
@@ -203,15 +272,70 @@ export class AIController {
       font-family: sans-serif;
       font-weight: bold;
     `;
-    header.textContent         = '💕 Chat with Luna';
+    header.textContent      = '💕 Chat with Luna';
     panel.appendChild(header);
 
-    const messages             = document.createElement('div');
-    messages.id                = 'historyMessages';
+    const messages          = document.createElement('div');
+    messages.id             = 'historyMessages';
     panel.appendChild(messages);
 
     document.body.appendChild(panel);
     this._updateHistoryPanel();
+
+    // ✅ Close dropdowns when clicking outside
+    document.addEventListener('click', (e) => {
+      const animDropdown  = document.getElementById('animDropdown');
+      const historyPanel  = document.getElementById('historyPanel');
+      const animBtn       = document.getElementById('animBtn');
+      const historyBtn    = document.getElementById('historyBtn');
+
+      // Close anim dropdown if clicking outside
+      if (
+        animDropdown &&
+        !animDropdown.contains(e.target) &&
+        e.target !== animBtn
+      ) {
+        animDropdown.classList.remove('open');
+      }
+
+      // Close history panel if clicking outside
+      if (
+        historyPanel &&
+        !historyPanel.contains(e.target) &&
+        e.target !== historyBtn
+      ) {
+        historyPanel.style.display = 'none';
+      }
+    });
+  }
+
+  // ✅ Toggle animation dropdown
+  _toggleAnimDropdown() {
+    const dropdown = document.getElementById('animDropdown');
+    if (!dropdown) return;
+
+    // Close history panel if open
+    const historyPanel = document.getElementById('historyPanel');
+    if (historyPanel) historyPanel.style.display = 'none';
+
+    dropdown.classList.toggle('open');
+  }
+
+  // ✅ Toggle history panel
+  _toggleHistoryPanel() {
+    const panel = document.getElementById('historyPanel');
+    if (!panel) return;
+
+    // Close anim dropdown if open
+    const animDropdown = document.getElementById('animDropdown');
+    if (animDropdown) animDropdown.classList.remove('open');
+
+    if (panel.style.display === 'none') {
+      panel.style.display = 'block';
+      this._updateHistoryPanel();
+    } else {
+      panel.style.display = 'none';
+    }
   }
 
   _toggleHistoryPanel() {
@@ -305,6 +429,39 @@ export class AIController {
 
     this._saveHistory();
     this._executeGreeting(greeting);
+  }
+  
+  async _executeGreeting(responseText) {
+    if (this.isSpeaking) return;
+    this.isSpeaking = true;
+
+    console.log('Executing greeting:', responseText);
+
+    // Show speech bubble
+    const bubble = this._showSpeechBubble(responseText);
+
+    // Wave animation
+    this.animController.playAnimation('wave', {
+      loop:         this.LOOP_ONCE,
+      returnToIdle: true
+    });
+
+    // Head bob
+    this.animController.startHeadBob(0.8);
+
+    // Speak
+    const duration = await this._speak(responseText);
+
+    // Lip sync
+    this.lipSync.startFromText(responseText, duration);
+
+    // Cleanup
+    setTimeout(() => {
+      this.lipSync.stop();
+      this.animController.stopHeadBob();
+      bubble.remove();
+      this.isSpeaking = false;
+    }, duration + 200);
   }
 
   // ==================================================
