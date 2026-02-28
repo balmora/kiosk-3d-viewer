@@ -16,6 +16,11 @@ Thumbs.db
 # Ignore large model files
 models/*.bin
 models/*.glb
+models/*.gltf
 
 # Keep the models folder but ignore large files
 !models/.gitkeep
+
+# Ignore downloaded libraries
+libs/
+
