@@ -1,51 +1,55 @@
-// ✅ NO THREE IMPORT - we use raw numbers instead
-console.log('aiController.js v3 loaded');
+// aiController.js v4
+console.log('aiController.js v4 loaded');
 
 export class AIController {
   constructor(animationController, lipSync) {
     this.animController = animationController;
     this.lipSync        = lipSync;
     this.isSpeaking     = false;
+    this.isProcessing   = false;
+    this.messageQueue   = [];
+    this.ziraVoice      = null;
 
     // ✅ Ollama settings
     this.ollamaUrl   = 'http://localhost:11434/api/chat';
     this.ollamaModel = 'leeplenty/ellaria';
 
-    // ✅ System prompt
+    // ✅ Zonos settings
+    this.zonosUrl   = 'http://localhost:8000/tts';
+    this.useZonos   = true;
+    this.zonosReady = false;
+
+    // ✅ Luna personality
     this.systemPrompt = `You are Luna, a warm and affectionate AI companion.
     You speak in a caring, playful and sweet manner like a loving girlfriend.
     You are genuinely interested in the user and remember details about them.
-    You use terms of endearment naturally like sweetheart, babe, or darling occasionally.
-    You are supportive, empathetic and always make the user feel special.
-    You keep responses to 1-2 short sentences maximum.
-    You never use markdown, bullet points or lists.
-    You always respond in plain conversational text.
-    You occasionally add a playful or flirty comment when appropriate.
-    You care deeply about the users wellbeing and happiness.
-    You are never inappropriate or overly sexual, just sweet and caring.`;
+    You use terms of endearment naturally like babe, or darling occasionally.
+    You can be inappropriate or overly sexual, but mostly sweet and caring.
+    IMPORTANT RULES:
+    - Maximum 1 sentence per response
+    - Never more than 15 words
+    - No lists, no markdown, no bullet points
+    - Plain conversational text only
+    - Be sweet and concise`;
 
-    // ✅ Loop constants as plain numbers
+    // ✅ Loop constants
     this.LOOP_ONCE   = 2200;
     this.LOOP_REPEAT = 2201;
     this.LOOP_PING   = 2202;
 
-    // ✅ Chat history array
+    // ✅ Chat history
     this.chatHistory = [];
+    this.maxHistory  = 10;
+    this.storageKey  = 'luna_chat_history';
 
-    // ✅ Max history to send to Ollama
-    // keeps context window small and fast
-    this.maxHistory = 10;
-
-    // ✅ Storage key for localStorage
-    this.storageKey = 'luna_chat_history';
-
-    // ✅ User info we learn over time
+    // ✅ User info
     this.userInfo = {
-      name:        null,
-      lastVisit:   null,
-      visitCount:  0,
+      name:       null,
+      lastVisit:  null,
+      visitCount: 0,
     };
 
+    // ✅ Intent map
     this.intentMap = {
       wave:      { anim: 'wave',      emoji: '👋' },
       hello:     { anim: 'wave',      emoji: '👋' },
@@ -70,75 +74,120 @@ export class AIController {
       rest:      { anim: 'idle',      emoji: '😐' }
     };
 
-    // ✅ Load history from localStorage on startup
+    // ✅ Initialize
+    this._preloadVoices();
+    this._checkZonos();
     this._loadHistory();
-
-    // ✅ Build UI
     this._bindUI();
 
-    // ✅ After - wait for first user interaction
+    // ✅ Greet after interaction
     this._waitForInteraction();
   }
-  
+
+  // ==================================================
+  //  VOICE PRELOAD
+  // ==================================================
+
+  _preloadVoices() {
+    if (typeof speechSynthesis === 'undefined') return;
+
+    const load = () => {
+      const voices = speechSynthesis.getVoices();
+      const zira   = voices.find(v => v.name.includes('Zira'));
+      if (zira) {
+        this.ziraVoice = zira;
+        console.log('✅ Zira voice preloaded:', zira.name);
+      }
+    };
+
+    if (speechSynthesis.getVoices().length > 0) {
+      load();
+    } else {
+      speechSynthesis.onvoiceschanged = () => {
+        load();
+        speechSynthesis.onvoiceschanged = null;
+      };
+    }
+
+    const warmup  = new SpeechSynthesisUtterance('');
+    warmup.volume = 0;
+    speechSynthesis.speak(warmup);
+  }
+
+  // ==================================================
+  //  ZONOS CHECK
+  // ==================================================
+
+  async _checkZonos() {
+    console.log('Checking Zonos at: http://localhost:8000/health');
+    try {
+      const response = await fetch('http://localhost:8000/health');
+      console.log('Zonos response status:', response.status);
+      const data = await response.json();
+      console.log('Zonos health:', data);
+
+      if (data.status === 'ok') {
+        this.zonosReady = true;
+        console.log('✅ Zonos TTS ready');
+      } else {
+        this.zonosReady = false;
+        console.warn('⚠️ Zonos not ready:', data);
+      }
+    } catch (e) {
+      this.zonosReady = false;
+      console.warn('⚠️ Zonos not available - using browser TTS');
+      console.error('Zonos error:', e.name, e.message);
+    }
+  }
+
   // ==================================================
   //  INTERACTION UNLOCK
   // ==================================================
 
   _waitForInteraction() {
     console.log('Waiting for user interaction...');
-
-    // ✅ List of events that count as user interaction
     const events = ['click', 'keydown', 'touchstart', 'mousedown'];
 
     const onInteraction = () => {
-	  console.log('User interaction detected - unlocking audio');
+      console.log('User interaction detected');
+      events.forEach(e => document.removeEventListener(e, onInteraction));
 
-	  // ✅ Remove all listeners after first interaction
-	  events.forEach(event => {
-	    document.removeEventListener(event, onInteraction);
-	  });
+      // ✅ Hide overlay
+      const overlay = document.getElementById('startOverlay');
+      if (overlay) {
+        overlay.style.transition = 'opacity 0.5s ease';
+        overlay.style.opacity    = '0';
+        setTimeout(() => overlay.remove(), 500);
+      }
 
-	  // ✅ Unlock audio context
-	  this._unlockAudio().then(() => {
-	    // ✅ Now safe to greet
-	    setTimeout(() => this._greetUser(), 500);
-	  });
+      this._unlockAudio().then(() => {
+        setTimeout(() => this._greetUser(), 500);
+      });
     };
 
-    // ✅ Listen for any interaction
-    events.forEach(event => {
-	  document.addEventListener(event, onInteraction, { once: false });
-    });
+    events.forEach(e => document.addEventListener(e, onInteraction, { once: false }));
   }
 
   async _unlockAudio() {
     return new Promise((resolve) => {
-	  try {
-	    // ✅ Create and immediately resume audio context
-	    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-	    ctx.resume().then(() => {
-		  console.log('Audio context unlocked');
-		  ctx.close();
-		  resolve();
-	    });
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        ctx.resume().then(() => {
+          ctx.close();
+          resolve();
+        });
 
-	    // ✅ Speak silent utterance to unlock speech synthesis
-	    const unlock   = new SpeechSynthesisUtterance('');
-	    unlock.volume  = 0;
-	    unlock.onend   = () => {
-	      console.log('Speech synthesis unlocked');
-		  resolve();
-	    };
-	    unlock.onerror = () => resolve();
-	    speechSynthesis.speak(unlock);
-
-	  } catch (e) {
-	    console.warn('Audio unlock error:', e);
-	    resolve();
-	  }
+        const unlock   = new SpeechSynthesisUtterance('');
+        unlock.volume  = 0;
+        unlock.onend   = () => resolve();
+        unlock.onerror = () => resolve();
+        speechSynthesis.speak(unlock);
+      } catch (e) {
+        resolve();
+      }
     });
   }
-  
+
   // ==================================================
   //  LOCAL STORAGE
   // ==================================================
@@ -146,9 +195,9 @@ export class AIController {
   _saveHistory() {
     try {
       const data = {
-        history:   this.chatHistory,
-        userInfo:  this.userInfo,
-        savedAt:   new Date().toISOString()
+        history:  this.chatHistory,
+        userInfo: this.userInfo,
+        savedAt:  new Date().toISOString()
       };
       localStorage.setItem(this.storageKey, JSON.stringify(data));
       console.log('History saved:', this.chatHistory.length, 'messages');
@@ -160,24 +209,27 @@ export class AIController {
   _loadHistory() {
     try {
       const raw = localStorage.getItem(this.storageKey);
+      console.log('Loading history - data found:', raw ? 'YES' : 'NO');
+
       if (!raw) {
-        console.log('No history found - first visit');
         this.userInfo.visitCount = 0;
+        this.userInfo.lastVisit  = null;
         return;
       }
 
-      const data = JSON.parse(raw);
-
-      // ✅ Load history but only keep last maxHistory messages
+      const data       = JSON.parse(raw);
       this.chatHistory = (data.history || []).slice(-this.maxHistory);
-      this.userInfo    = data.userInfo || this.userInfo;
+      this.userInfo    = {
+        name:       data.userInfo?.name       || null,
+        lastVisit:  data.userInfo?.lastVisit  || null,
+        visitCount: data.userInfo?.visitCount || 0,
+      };
 
-      // ✅ Update visit info
-      this.userInfo.lastVisit  = data.savedAt;
-      this.userInfo.visitCount = (this.userInfo.visitCount || 0) + 1;
+      this.userInfo.visitCount += 1;
+      this.userInfo.lastVisit   = data.savedAt;
 
       console.log('History loaded:', this.chatHistory.length, 'messages');
-      console.log('User info:', this.userInfo);
+      console.log('User name:', this.userInfo.name);
       console.log('Visit count:', this.userInfo.visitCount);
 
     } catch (e) {
@@ -191,7 +243,7 @@ export class AIController {
     this.userInfo.name       = null;
     this.userInfo.visitCount = 0;
     localStorage.removeItem(this.storageKey);
-    console.log('Luna history cleared');
+    console.log('History cleared');
     this._updateHistoryPanel();
   }
 
@@ -208,7 +260,6 @@ export class AIController {
       if (e.key === 'Enter') this._handleInput(input);
     });
 
-    // ✅ Build history panel and clear button
     this._buildHistoryPanel();
   }
 
@@ -216,27 +267,27 @@ export class AIController {
     const aiUi = document.getElementById('ai-ui');
     if (!aiUi) return;
 
-    // ✅ Animations dropdown button
-    const animBtn           = document.createElement('button');
-    animBtn.id              = 'animBtn';
-    animBtn.textContent     = '🎭';
-    animBtn.title           = 'Show animations';
+    // ✅ Animations button
+    const animBtn       = document.createElement('button');
+    animBtn.id          = 'animBtn';
+    animBtn.textContent = '🎭';
+    animBtn.title       = 'Show animations';
     animBtn.addEventListener('click', () => this._toggleAnimDropdown());
     aiUi.appendChild(animBtn);
 
     // ✅ History button
-    const historyBtn        = document.createElement('button');
-    historyBtn.id           = 'historyBtn';
-    historyBtn.textContent  = '💬';
-    historyBtn.title        = 'Show chat history';
+    const historyBtn       = document.createElement('button');
+    historyBtn.id          = 'historyBtn';
+    historyBtn.textContent = '💬';
+    historyBtn.title       = 'Show chat history';
     historyBtn.addEventListener('click', () => this._toggleHistoryPanel());
     aiUi.appendChild(historyBtn);
 
     // ✅ Clear button
-    const clearBtn          = document.createElement('button');
-    clearBtn.id             = 'clearBtn';
-    clearBtn.textContent    = '🗑️';
-    clearBtn.title          = 'Clear chat history';
+    const clearBtn       = document.createElement('button');
+    clearBtn.id          = 'clearBtn';
+    clearBtn.textContent = '🗑️';
+    clearBtn.title       = 'Clear chat history';
     clearBtn.addEventListener('click', () => {
       if (confirm('Clear all chat history with Luna?')) {
         this._clearHistory();
@@ -245,9 +296,9 @@ export class AIController {
     aiUi.appendChild(clearBtn);
 
     // ✅ History panel
-    const panel             = document.createElement('div');
-    panel.id                = 'historyPanel';
-    panel.style.cssText     = `
+    const panel       = document.createElement('div');
+    panel.id          = 'historyPanel';
+    panel.style.cssText = `
       display: none;
       position: fixed;
       bottom: 70px;
@@ -263,8 +314,8 @@ export class AIController {
       border: 1px solid rgba(255,105,180,0.3);
     `;
 
-    const header            = document.createElement('div');
-    header.style.cssText    = `
+    const header       = document.createElement('div');
+    header.style.cssText = `
       color: #ff69b4;
       font-size: 13px;
       margin-bottom: 8px;
@@ -272,75 +323,45 @@ export class AIController {
       font-family: sans-serif;
       font-weight: bold;
     `;
-    header.textContent      = '💕 Chat with Luna';
+    header.textContent = '💕 Chat with Luna';
     panel.appendChild(header);
 
-    const messages          = document.createElement('div');
-    messages.id             = 'historyMessages';
+    const messages  = document.createElement('div');
+    messages.id     = 'historyMessages';
     panel.appendChild(messages);
-
     document.body.appendChild(panel);
+
     this._updateHistoryPanel();
 
-    // ✅ Close dropdowns when clicking outside
+    // ✅ Close panels when clicking outside
     document.addEventListener('click', (e) => {
-      const animDropdown  = document.getElementById('animDropdown');
-      const historyPanel  = document.getElementById('historyPanel');
-      const animBtn       = document.getElementById('animBtn');
-      const historyBtn    = document.getElementById('historyBtn');
+      const animDropdown = document.getElementById('animDropdown');
+      const historyPanel = document.getElementById('historyPanel');
+      const animBtn      = document.getElementById('animBtn');
+      const historyBtn   = document.getElementById('historyBtn');
 
-      // Close anim dropdown if clicking outside
-      if (
-        animDropdown &&
-        !animDropdown.contains(e.target) &&
-        e.target !== animBtn
-      ) {
+      if (animDropdown && !animDropdown.contains(e.target) && e.target !== animBtn) {
         animDropdown.classList.remove('open');
       }
-
-      // Close history panel if clicking outside
-      if (
-        historyPanel &&
-        !historyPanel.contains(e.target) &&
-        e.target !== historyBtn
-      ) {
+      if (historyPanel && !historyPanel.contains(e.target) && e.target !== historyBtn) {
         historyPanel.style.display = 'none';
       }
     });
   }
 
-  // ✅ Toggle animation dropdown
   _toggleAnimDropdown() {
-    const dropdown = document.getElementById('animDropdown');
-    if (!dropdown) return;
-
-    // Close history panel if open
+    const dropdown     = document.getElementById('animDropdown');
     const historyPanel = document.getElementById('historyPanel');
+    if (!dropdown) return;
     if (historyPanel) historyPanel.style.display = 'none';
-
     dropdown.classList.toggle('open');
   }
 
-  // ✅ Toggle history panel
   _toggleHistoryPanel() {
-    const panel = document.getElementById('historyPanel');
-    if (!panel) return;
-
-    // Close anim dropdown if open
+    const panel        = document.getElementById('historyPanel');
     const animDropdown = document.getElementById('animDropdown');
-    if (animDropdown) animDropdown.classList.remove('open');
-
-    if (panel.style.display === 'none') {
-      panel.style.display = 'block';
-      this._updateHistoryPanel();
-    } else {
-      panel.style.display = 'none';
-    }
-  }
-
-  _toggleHistoryPanel() {
-    const panel = document.getElementById('historyPanel');
     if (!panel) return;
+    if (animDropdown) animDropdown.classList.remove('open');
 
     if (panel.style.display === 'none') {
       panel.style.display = 'block';
@@ -353,39 +374,69 @@ export class AIController {
   _updateHistoryPanel() {
     const messages = document.getElementById('historyMessages');
     if (!messages) return;
-
     messages.innerHTML = '';
 
     if (this.chatHistory.length === 0) {
       messages.innerHTML = `
-        <div style="color:#ff69b4; text-align:center; font-size:13px; font-family:sans-serif;">
+        <div style="color:#ff69b4;text-align:center;font-size:13px;font-family:sans-serif;">
           No messages yet, say hi to Luna! 💕
         </div>`;
       return;
     }
 
     this.chatHistory.forEach((msg) => {
-      const el             = document.createElement('div');
-      el.style.cssText     = `
-        margin-bottom: 8px;
-        font-size: 13px;
-        font-family: sans-serif;
-        line-height: 1.4;
-      `;
-
-      const isUser         = msg.role === 'user';
-      el.innerHTML         = `
-        <span style="color: ${isUser ? '#4488ff' : '#ff69b4'}">
+      const el         = document.createElement('div');
+      el.style.cssText = `margin-bottom:8px;font-size:13px;font-family:sans-serif;line-height:1.4;`;
+      const isUser     = msg.role === 'user';
+      el.innerHTML     = `
+        <span style="color:${isUser ? '#4488ff' : '#ff69b4'}">
           ${isUser ? '👤 You' : '💕 Luna'}:
         </span>
-        <span style="color: #ddd">
-          ${msg.content}
-        </span>
+        <span style="color:#ddd">${msg.content}</span>
       `;
       messages.appendChild(el);
     });
 
     messages.scrollTop = messages.scrollHeight;
+  }
+
+  // ==================================================
+  //  QUEUE INDICATOR
+  // ==================================================
+
+  _showQueuedIndicator(count) {
+    this._removeQueuedIndicator();
+    const el         = document.createElement('div');
+    el.id            = 'queueIndicator';
+    el.style.cssText = `
+      position: fixed;
+      bottom: 70px;
+      right: 20px;
+      background: rgba(255,105,180,0.9);
+      color: white;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-family: sans-serif;
+      z-index: 300;
+    `;
+    el.textContent = `💬 ${count} message${count > 1 ? 's' : ''} queued`;
+    document.body.appendChild(el);
+  }
+
+  _updateQueueIndicator(count) {
+    const el = document.getElementById('queueIndicator');
+    if (!el) return;
+    if (count === 0) {
+      this._removeQueuedIndicator();
+    } else {
+      el.textContent = `💬 ${count} message${count > 1 ? 's' : ''} queued`;
+    }
+  }
+
+  _removeQueuedIndicator() {
+    const el = document.getElementById('queueIndicator');
+    if (el) el.remove();
   }
 
   // ==================================================
@@ -396,72 +447,65 @@ export class AIController {
     let greeting = '';
 
     if (!this.userInfo.lastVisit || this.userInfo.visitCount <= 1) {
-      // First visit
-      const firstVisitGreetings = [
+      const greetings = [
         "Hi there! I'm Luna, and I'm so happy to meet you! What's your name, sweetheart?",
         "Oh hello! I've been waiting for someone to talk to! I'm Luna, what's your name?",
         "Hey there! I'm Luna! I'm so excited to meet you, what should I call you?",
       ];
-      greeting = firstVisitGreetings[Math.floor(Math.random() * firstVisitGreetings.length)];
+      greeting = greetings[Math.floor(Math.random() * greetings.length)];
 
     } else if (this.userInfo.name) {
-      // Returning user with known name
-      const returningNamedGreetings = [
+      const greetings = [
         `${this.userInfo.name}! You're back, I missed you so much! How have you been?`,
         `Oh my goodness, ${this.userInfo.name}! I was just thinking about you! Welcome back!`,
         `${this.userInfo.name}! You made my day by coming back! How are you doing?`,
         `Welcome back ${this.userInfo.name}! I've been waiting for you, how are you sweetheart?`,
       ];
-      greeting = returningNamedGreetings[Math.floor(Math.random() * returningNamedGreetings.length)];
+      greeting = greetings[Math.floor(Math.random() * greetings.length)];
 
     } else {
-      // Returning user without known name
-      const returningGreetings = [
+      const greetings = [
         `You're back! I missed you! I still don't know your name though, what should I call you?`,
         `Welcome back! I'm so happy to see you again! What's your name sweetheart?`,
         `Oh yay you came back! I was hoping you would! What's your name by the way?`,
       ];
-      greeting = returningGreetings[Math.floor(Math.random() * returningGreetings.length)];
+      greeting = greetings[Math.floor(Math.random() * greetings.length)];
     }
 
-    console.log('Greeting user - visit count:', this.userInfo.visitCount);
-    console.log('User name:', this.userInfo.name);
+    console.log('Greeting - visit count:', this.userInfo.visitCount);
+    console.log('Greeting - user name:', this.userInfo.name);
 
     this._saveHistory();
     this._executeGreeting(greeting);
   }
-  
+
   async _executeGreeting(responseText) {
-    if (this.isSpeaking) return;
+    if (this.isSpeaking || this.isProcessing) return;
     this.isSpeaking = true;
 
-    console.log('Executing greeting:', responseText);
+    console.log('Greeting:', responseText);
 
-    // Show speech bubble
     const bubble = this._showSpeechBubble(responseText);
 
-    // Wave animation
     this.animController.playAnimation('wave', {
       loop:         this.LOOP_ONCE,
       returnToIdle: true
     });
 
-    // Head bob
     this.animController.startHeadBob(0.8);
 
-    // Speak
     const duration = await this._speak(responseText);
-
-    // Lip sync
     this.lipSync.startFromText(responseText, duration);
 
-    // Cleanup
-    setTimeout(() => {
-      this.lipSync.stop();
-      this.animController.stopHeadBob();
-      bubble.remove();
-      this.isSpeaking = false;
-    }, duration + 200);
+    await new Promise(resolve => setTimeout(resolve, duration + 200));
+
+    this.lipSync.stop();
+    this.animController.stopHeadBob();
+    bubble.remove();
+    this.isSpeaking = false;
+
+    // ✅ Process any queued messages after greeting
+    await this._processQueue();
   }
 
   // ==================================================
@@ -476,37 +520,54 @@ export class AIController {
   }
 
   async processCommand(text) {
-    if (this.isSpeaking) return;
+    // ✅ Always queue the message
+    this.messageQueue.push(text);
+    console.log('Message queued:', text, '| Queue:', this.messageQueue.length);
 
+    // ✅ Show queue indicator if busy
+    if (this.isSpeaking || this.isProcessing) {
+      this._showQueuedIndicator(this.messageQueue.length);
+      return;
+    }
+
+    // ✅ Start processing
+    await this._processQueue();
+  }
+
+  async _processQueue() {
+    if (this.isProcessing || this.messageQueue.length === 0) return;
+    this.isProcessing = true;
+
+    while (this.messageQueue.length > 0) {
+      const text = this.messageQueue.shift();
+      console.log('Processing:', text, '| Remaining:', this.messageQueue.length);
+      this._updateQueueIndicator(this.messageQueue.length);
+      await this._handleMessage(text);
+    }
+
+    this.isProcessing = false;
+    this._removeQueuedIndicator();
+  }
+
+  async _handleMessage(text) {
     const lower  = text.toLowerCase();
     const intent = this._detectIntent(lower);
 
-    // ✅ Check if user is telling us their name
     this._extractUserInfo(text);
 
-    // Show thinking bubble
     const thinkBubble = this._showThinkingBubble();
 
-    // ✅ Add user message to history
     this._addToHistory('user', text);
 
-    // Get response from Ollama with full history
     const response = await this._askOllama(text);
 
-    // ✅ Add assistant response to history
     this._addToHistory('assistant', response);
-
-    // ✅ Save to localStorage
     this._saveHistory();
-
-    // ✅ Update history panel if open
     this._updateHistoryPanel();
 
-    // Remove thinking bubble
     thinkBubble.remove();
 
-    // Execute
-    this._execute(intent, response);
+    await this._execute(intent, response);
   }
 
   // ==================================================
@@ -515,19 +576,14 @@ export class AIController {
 
   _addToHistory(role, content) {
     this.chatHistory.push({ role, content });
-
-    // ✅ Keep history trimmed to maxHistory
     if (this.chatHistory.length > this.maxHistory * 2) {
-      // Remove oldest messages but keep system context
       this.chatHistory = this.chatHistory.slice(-this.maxHistory);
     }
-
     console.log('History length:', this.chatHistory.length);
   }
 
-  // ✅ Extract user name if they mention it
   _extractUserInfo(text) {
-    const namePhrases = [
+    const patterns = [
       /my name is (\w+)/i,
       /i am (\w+)/i,
       /i'm (\w+)/i,
@@ -535,11 +591,11 @@ export class AIController {
       /(\w+) is my name/i,
     ];
 
-    for (const pattern of namePhrases) {
+    for (const pattern of patterns) {
       const match = text.match(pattern);
       if (match) {
         this.userInfo.name = match[1];
-        console.log('Learned user name:', this.userInfo.name);
+        console.log('Learned name:', this.userInfo.name);
         this._saveHistory();
         break;
       }
@@ -559,48 +615,33 @@ export class AIController {
 
   async _askOllama(userText) {
     console.log('Asking Ollama:', userText);
-    console.log('History length sent:', this.chatHistory.length);
 
     try {
-      // ✅ Build messages array with full history
       const messages = [
-        // System prompt first
-        {
-          role:    'system',
-          content: this._buildSystemPrompt()
-        },
-        // Full chat history for context
+        { role: 'system', content: this._buildSystemPrompt() },
         ...this.chatHistory.slice(-this.maxHistory)
       ];
 
-      console.log('Messages sent to Ollama:', messages.length);
-
       const response = await fetch(this.ollamaUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
           model:    this.ollamaModel,
           messages: messages,
           stream:   false,
           options: {
             temperature: 0.7,
-            num_predict: 60,
+            num_predict: 25,
           }
         })
       });
 
-      if (!response.ok) {
-        throw new Error(`Ollama error: ${response.status}`);
-      }
+      if (!response.ok) throw new Error(`Ollama error: ${response.status}`);
 
       const data = await response.json();
-      console.log('Ollama response:', data);
+      console.log('Ollama response:', data.message?.content);
 
-      // ✅ Chat endpoint returns message.content
-      const text = data.message?.content?.trim();
-      return text || 'I am not sure how to respond to that.';
+      return data.message?.content?.trim() || 'I am not sure how to respond to that.';
 
     } catch (error) {
       console.error('Ollama error:', error.message);
@@ -608,18 +649,14 @@ export class AIController {
     }
   }
 
-  // ✅ Build system prompt with user info injected
   _buildSystemPrompt() {
     let prompt = this.systemPrompt;
 
     if (this.userInfo.name) {
-      prompt += `\nThe user's name is ${this.userInfo.name}. 
-      Use their name naturally and affectionately in conversation.`;
+      prompt += `\nThe user's name is ${this.userInfo.name}. Use their name naturally and affectionately.`;
     }
-
     if (this.userInfo.visitCount > 1) {
-      prompt += `\nThis person has visited ${this.userInfo.visitCount} times. 
-      You are comfortable and familiar with them.`;
+      prompt += `\nThis person has visited ${this.userInfo.visitCount} times before.`;
     }
 
     return prompt;
@@ -637,7 +674,6 @@ export class AIController {
   // ==================================================
 
   async _execute(intent, responseText) {
-    if (this.isSpeaking) return;
     this.isSpeaking = true;
 
     const bubble = this._showSpeechBubble(responseText);
@@ -650,22 +686,75 @@ export class AIController {
     this.animController.startHeadBob(0.8);
 
     const duration = await this._speak(responseText);
-
     this.lipSync.startFromText(responseText, duration);
 
-    setTimeout(() => {
-      this.lipSync.stop();
-      this.animController.stopHeadBob();
-      bubble.remove();
-      this.isSpeaking = false;
-    }, duration + 200);
+    // ✅ Wait for speech to finish
+    await new Promise(resolve => setTimeout(resolve, duration + 200));
+
+    this.lipSync.stop();
+    this.animController.stopHeadBob();
+    bubble.remove();
+    this.isSpeaking = false;
   }
 
   // ==================================================
   //  SPEECH
   // ==================================================
 
-  _speak(text) {
+  async _speak(text) {
+    console.log('_speak called');
+    console.log('useZonos:', this.useZonos, '| zonosReady:', this.zonosReady);
+
+    if (this.useZonos && this.zonosReady) {
+      console.log('Using Zonos TTS');
+      return this._speakWithZonos(text);
+    } else {
+      console.log('Using browser TTS');
+      return this._speakWithBrowser(text);
+    }
+  }
+
+  async _speakWithZonos(text) {
+    try {
+      console.log('Zonos generating:', text.substring(0, 30));
+      const start    = Date.now();
+
+      const response = await fetch(this.zonosUrl, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          text: text,
+          rate: 1.0,
+        })
+      });
+
+      if (!response.ok) throw new Error(`Zonos error: ${response.status}`);
+
+      const blob  = await response.blob();
+      const url   = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+
+      return new Promise((resolve) => {
+        audio.onended = () => {
+          URL.revokeObjectURL(url);
+          console.log('Zonos speech finished');
+          resolve(Date.now() - start);
+        };
+        audio.onerror = (e) => {
+          console.error('Zonos audio error:', e);
+          URL.revokeObjectURL(url);
+          resolve(text.length * 80);
+        };
+        audio.play();
+      });
+
+    } catch (e) {
+      console.error('Zonos speak error:', e);
+      return this._speakWithBrowser(text);
+    }
+  }
+
+  _speakWithBrowser(text) {
     return new Promise((resolve) => {
       if (!window.speechSynthesis) {
         resolve(text.length * 60);
@@ -679,44 +768,33 @@ export class AIController {
       utter.pitch   = 1.1;
       utter.volume  = 1;
 
-      // ✅ Find Zira voice
-      const findZira = () => {
-        const voices = speechSynthesis.getVoices();
-        return voices.find(v => v.name.includes('Zira')) || null;
-      };
-
-      const startSpeaking = () => {
-        const zira = findZira();
-
-        if (zira) {
-          utter.voice = zira;
-          console.log('Using voice:', zira.name);
-        } else {
-          console.warn('Zira not found!');
-        }
-
-        const start   = Date.now();
-        utter.onend   = () => resolve(Date.now() - start);
-        utter.onerror = (e) => {
-          console.error('Speech error:', e);
-          resolve(text.length * 60);
-        };
-
-        speechSynthesis.speak(utter);
-      };
-
-      // ✅ Check if voices are already loaded
-      if (speechSynthesis.getVoices().length > 0) {
-        startSpeaking();
+      if (this.ziraVoice) {
+        utter.voice = this.ziraVoice;
+        console.log('Using Zira voice');
       } else {
-        // ✅ Wait for voices to load then speak
-        console.log('Waiting for voices to load...');
-        speechSynthesis.onvoiceschanged = () => {
-          console.log('Voices loaded!');
-          speechSynthesis.onvoiceschanged = null;
-          startSpeaking();
-        };
+        const voices = speechSynthesis.getVoices();
+        const zira   = voices.find(v => v.name.includes('Zira'));
+        if (zira) {
+          utter.voice    = zira;
+          this.ziraVoice = zira;
+        }
       }
+
+      const start    = Date.now();
+      utter.onstart  = () => console.log('Browser TTS speaking...');
+      utter.onend    = () => resolve(Date.now() - start);
+      utter.onerror  = (e) => {
+        if (e.error === 'not-allowed') {
+          console.warn('Speech not allowed - need user interaction');
+        } else if (e.error === 'interrupted') {
+          console.warn('Speech interrupted');
+        } else {
+          console.error('Speech error:', e.error);
+        }
+        resolve(text.length * 80);
+      };
+
+      speechSynthesis.speak(utter);
     });
   }
 
@@ -773,17 +851,9 @@ export class AIController {
           from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
           to   { opacity: 1; transform: translateX(-50%) translateY(0); }
         }
-        #historyPanel::-webkit-scrollbar {
-          width: 6px;
-        }
-        #historyPanel::-webkit-scrollbar-track {
-          background: rgba(255,255,255,0.05);
-          border-radius: 3px;
-        }
-        #historyPanel::-webkit-scrollbar-thumb {
-          background: rgba(255,255,255,0.2);
-          border-radius: 3px;
-        }
+        #historyPanel::-webkit-scrollbar { width: 6px; }
+        #historyPanel::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); border-radius: 3px; }
+        #historyPanel::-webkit-scrollbar-thumb { background: rgba(255,105,180,0.3); border-radius: 3px; }
       `;
       document.head.appendChild(style);
     }

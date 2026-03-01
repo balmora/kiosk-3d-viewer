@@ -24,3 +24,13 @@ models/*.gltf
 # Ignore downloaded libraries
 libs/
 
+# Ignore voice samples (can be large)
+voice/*.wav
+voice/*.mp3
+
+# Ignore any model cache files
+*.pt
+*.pth
+*.ckpt
+__pycache__/
+*.pyc
