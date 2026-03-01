@@ -5,14 +5,13 @@ Runs on http://localhost:8000
 
 import os
 import sys
+import io
+import re
 import ctypes
+import torch
+import numpy as np
 
-# ✅ Disable torch compilation FIRST - no Visual C++ needed
-os.environ['TORCHDYNAMO_DISABLE']  = '1'
-os.environ['TORCH_COMPILE_DISABLE'] = '1'
-os.environ['TORCH_INDUCTOR_DISABLE'] = '1'
-
-# ✅ eSpeak paths
+# ✅ Must be FIRST before any other imports
 ESPEAK_DIR  = r'C:\Program Files\eSpeak NG'
 ESPEAK_EXE  = r'C:\Program Files\eSpeak NG\espeak-ng.exe'
 ESPEAK_DATA = r'C:\Program Files\eSpeak NG\espeak-ng-data'
@@ -23,14 +22,14 @@ os.environ['PATH']                   = ESPEAK_DIR + ';' + os.environ.get('PATH',
 os.environ['ESPEAK_DATA_PATH']       = ESPEAK_DATA
 os.environ['PHONEMIZER_ESPEAK_PATH'] = ESPEAK_EXE
 
-# ✅ Load DLL
+# ✅ Load DLL directly
 try:
     ctypes.cdll.LoadLibrary(ESPEAK_DLL)
     print(f"✅ eSpeak DLL loaded")
 except Exception as e:
     print(f"⚠️ DLL load warning: {e}")
 
-# ✅ Set phonemizer library
+# ✅ Set phonemizer library before importing zonos
 try:
     from phonemizer.backend.espeak.espeak import EspeakBackend
     EspeakBackend.set_library(ESPEAK_DLL)
@@ -38,9 +37,11 @@ try:
 except Exception as e:
     print(f"⚠️ Phonemizer set_library warning: {e}")
 
-import torch
+# ✅ Disable torch compilation - no Visual C++ needed
+os.environ['TORCHDYNAMO_DISABLE']    = '1'
+os.environ['TORCH_COMPILE_DISABLE']  = '1'
+os.environ['TORCH_INDUCTOR_DISABLE'] = '1'
 
-# ✅ Disable dynamo after torch import
 try:
     import torch._dynamo
     torch._dynamo.config.suppress_errors = True
@@ -51,12 +52,10 @@ except Exception as e:
 
 from flask import Flask, request, send_file, jsonify
 from flask_cors import CORS
-import io
 
-# ✅ soundfile
+# ✅ soundfile for audio loading
 try:
     import soundfile as sf
-    import numpy as np
     SOUNDFILE_AVAILABLE = True
     print("✅ soundfile available")
 except ImportError:
@@ -66,24 +65,30 @@ except ImportError:
 app = Flask(__name__)
 CORS(app)
 
-print("Loading Zonos model...")
+# ==================================================
+#  AUDIO HELPERS
+# ==================================================
 
 def load_audio(path):
+    """Load audio file using soundfile or torchaudio"""
     try:
         if SOUNDFILE_AVAILABLE:
             data, sr = sf.read(path)
-            wav = torch.from_numpy(data).float()
+            wav      = torch.from_numpy(data).float()
             if wav.dim() == 1:
                 wav = wav.unsqueeze(0)
             elif wav.dim() == 2:
                 wav = wav.T
             return wav, sr
     except Exception as e:
-        print(f"soundfile failed: {e}")
+        print(f"soundfile load failed: {e}")
+
     import torchaudio
     return torchaudio.load(path)
 
+
 def save_audio(buffer, wav, sample_rate):
+    """Save audio tensor to buffer"""
     try:
         if SOUNDFILE_AVAILABLE:
             audio_np = wav.squeeze().numpy()
@@ -91,8 +96,119 @@ def save_audio(buffer, wav, sample_rate):
             return
     except Exception as e:
         print(f"soundfile save failed: {e}")
+
     import torchaudio
     torchaudio.save(buffer, wav, sample_rate, format="wav")
+
+
+def trim_audio(wav, threshold=0.01, sr=44100):
+    """
+    Trim silence and noise from start and end
+    Prevents humming and hallucination artifacts
+    """
+    try:
+        if SOUNDFILE_AVAILABLE:
+            audio = wav.squeeze().numpy()
+
+            # Find where audio is above threshold
+            above_threshold = np.abs(audio) > threshold
+
+            if above_threshold.any():
+                start = np.argmax(above_threshold)
+                end   = len(above_threshold) - np.argmax(above_threshold[::-1])
+
+                # Add 50ms padding
+                padding = int(sr * 0.05)
+                start   = max(0, start - padding)
+                end     = min(len(audio), end + padding)
+
+                audio_trimmed = audio[start:end]
+                wav           = torch.from_numpy(
+                    audio_trimmed
+                ).float().unsqueeze(0)
+
+    except Exception as e:
+        print(f"Trim warning: {e}")
+
+    return wav
+
+
+def clean_text_for_tts(text):
+    """Clean text before sending to Zonos"""
+
+    # ✅ Remove emojis
+    emoji_pattern = re.compile(
+        "["
+        u"\U0001F600-\U0001F64F"
+        u"\U0001F300-\U0001F5FF"
+        u"\U0001F680-\U0001F9FF"
+        u"\U00002702-\U000027B0"
+        "]+",
+        flags=re.UNICODE
+    )
+    text = emoji_pattern.sub('', text)
+
+    # ✅ Remove markdown
+    text = re.sub(r'\*\*?(.*?)\*\*?', r'\1', text)
+    text = re.sub(r'#{1,6}\s', '', text)
+    text = re.sub(r'`', '', text)
+
+    # ✅ Replace special characters
+    text = text.replace('&', 'and')
+    text = text.replace('@', 'at')
+    text = text.replace('#', '')
+    text = text.replace('...', '.')
+
+    # ✅ Fix apostrophes and quotes
+    text = text.replace('\u2019', "'")
+    text = text.replace('\u2018', "'")
+    text = text.replace('\u201c', '')
+    text = text.replace('\u201d', '')
+
+    # ✅ Clean whitespace
+    text = ' '.join(text.split())
+    text = text.strip()
+
+    print(f"Cleaned text: {text}")
+    return text
+
+
+def calculate_max_tokens(text, speaking_rate=12.0):
+    """
+    Calculate max tokens based on text length
+    Prevents Zonos generating too much audio
+
+    86 tokens = roughly 1 second of audio at 44100hz
+    """
+    words          = len(text.split())
+    chars          = len(text)
+
+    # Average speaking rate about 2.5 words per second
+    estimated_secs = max(1.0, words / 2.5)
+
+    # Add 20% buffer
+    estimated_secs = estimated_secs * 1.2
+
+    # Cap between 3 and 15 seconds
+    estimated_secs = max(3.0, min(15.0, estimated_secs))
+
+    # Convert to tokens
+    max_tokens = int(estimated_secs * 86)
+
+    print(f"Text: {chars} chars, {words} words")
+    print(f"Estimated duration: {estimated_secs:.1f}s")
+    print(f"Max tokens: {max_tokens}")
+
+    return max_tokens
+
+
+# ==================================================
+#  LOAD ZONOS MODEL
+# ==================================================
+
+print("=" * 40)
+print(" Loading Zonos model...")
+print("=" * 40)
 
 try:
     from zonos.model import Zonos
@@ -106,7 +222,9 @@ try:
         device=device
     )
     model.eval()
+    print("✅ Zonos model loaded")
 
+    # ✅ Load speaker voice if exists
     SPEAKER_WAV = "./voice/luna_voice.wav"
     speaker     = None
 
@@ -117,11 +235,13 @@ try:
             print(f"✅ Speaker voice loaded from {SPEAKER_WAV}")
         except Exception as e:
             print(f"⚠️ Could not load speaker voice: {e}")
+            print("Using default voice instead")
             speaker = None
     else:
         print(f"⚠️ No speaker voice at {SPEAKER_WAV}")
+        print("Add a wav file to enable voice cloning")
 
-    print("✅ Zonos model loaded successfully!")
+    print("✅ Zonos ready!")
     MODEL_LOADED = True
 
 except Exception as e:
@@ -130,17 +250,23 @@ except Exception as e:
     traceback.print_exc()
     MODEL_LOADED = False
 
+# ==================================================
+#  ROUTES
+# ==================================================
+
 @app.route('/health', methods=['GET'])
 def health():
     return jsonify({
         "status":        "ok" if MODEL_LOADED else "error",
         "model_loaded":  MODEL_LOADED,
         "device":        "cuda" if torch.cuda.is_available() else "cpu",
-        "speaker_voice": os.path.exists(SPEAKER_WAV),
+        "speaker_voice": os.path.exists("./voice/luna_voice.wav"),
         "espeak_exe":    os.path.exists(ESPEAK_EXE),
         "espeak_dll":    os.path.exists(ESPEAK_DLL),
+        "espeak_data":   os.path.exists(ESPEAK_DATA),
         "soundfile":     SOUNDFILE_AVAILABLE
     })
+
 
 @app.route('/tts', methods=['POST'])
 def tts():
@@ -154,24 +280,52 @@ def tts():
         if not text:
             return jsonify({"error": "No text provided"}), 400
 
-        print(f"Generating: {text[:50]}...")
+        # ✅ Clean text
+        text = clean_text_for_tts(text)
 
+        if not text:
+            return jsonify({"error": "Text empty after cleaning"}), 400
+
+        print(f"Generating: {text}")
+
+        # ✅ Calculate max tokens based on text length
+        max_tokens = calculate_max_tokens(text)
+
+        # ✅ Build conditioning
         cond_dict = make_cond_dict(
             text          = text,
             speaker       = speaker,
             language      = "en-us",
-            speaking_rate = data.get('rate', 15.0),
-            emotion       = data.get('emotion',
-                [0.3077, 0.0256, 0.0256, 0.0256, 0.0256, 0.0256, 0.2564, 0.3077]
-            ),
+            emotion       = [
+                0.2,    # Happiness
+                0.05,   # Sadness
+                0.05,   # Disgust
+                0.05,   # Fear
+                0.05,   # Surprise
+                0.05,   # Anger
+                0.1,    # Other
+                0.45,   # Neutral
+            ],
+            fmax          = 22050.0,
+            pitch_std     = 20.0,
+            speaking_rate = data.get('rate', 12.0),
         )
 
         conditioning = model.prepare_conditioning(cond_dict)
 
+        # ✅ Generate audio
         with torch.no_grad():
-            codes = model.generate(conditioning)
-            wav   = model.autoencoder.decode(codes).cpu()
+            torch.manual_seed(42)
+            codes = model.generate(
+                conditioning,
+                max_new_tokens = max_tokens,
+            )
+            wav = model.autoencoder.decode(codes).cpu()
 
+        # ✅ Trim silence
+        wav = trim_audio(wav)
+
+        # ✅ Save to buffer
         buffer = io.BytesIO()
         save_audio(
             buffer,
@@ -194,8 +348,10 @@ def tts():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
+
 @app.route('/clone', methods=['POST'])
 def clone_voice():
+    """Upload a wav file to clone Luna voice"""
     if 'file' not in request.files:
         return jsonify({"error": "No file provided"}), 400
 
@@ -208,31 +364,51 @@ def clone_voice():
         wav, sr  = load_audio(SPEAKER_WAV)
         speaker  = model.make_speaker_embedding(wav, sr)
 
+        print("✅ Voice cloned successfully")
         return jsonify({"status": "✅ Voice cloned successfully"})
 
     except Exception as e:
+        print(f"❌ Clone error: {e}")
         return jsonify({"error": str(e)}), 500
+
 
 @app.route('/test', methods=['GET'])
 def test():
+    """Quick test to verify Zonos is working"""
     if not MODEL_LOADED:
         return jsonify({"error": "Model not loaded"}), 500
 
     try:
-        print("Generating test speech...")
+        test_text  = "Hello! I am Luna, your AI companion. How are you today?"
+        test_text  = clean_text_for_tts(test_text)
+        max_tokens = calculate_max_tokens(test_text)
+
+        print(f"Test generating: {test_text}")
 
         cond_dict = make_cond_dict(
-            text     = "Hello! I am Luna, your AI companion. How are you today?",
+            text     = test_text,
             speaker  = speaker,
             language = "en-us",
+            emotion  = [
+                0.2, 0.05, 0.05, 0.05,
+                0.05, 0.05, 0.1, 0.45,
+            ],
+            fmax          = 22050.0,
+            pitch_std     = 20.0,
+            speaking_rate = 12.0,
         )
 
         conditioning = model.prepare_conditioning(cond_dict)
 
         with torch.no_grad():
-            codes = model.generate(conditioning)
-            wav   = model.autoencoder.decode(codes).cpu()
+            torch.manual_seed(42)
+            codes = model.generate(
+                conditioning,
+                max_new_tokens = max_tokens,
+            )
+            wav = model.autoencoder.decode(codes).cpu()
 
+        wav    = trim_audio(wav)
         buffer = io.BytesIO()
         save_audio(buffer, wav.squeeze(0), model.autoencoder.sampling_rate)
         buffer.seek(0)
@@ -251,14 +427,21 @@ def test():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
+
+# ==================================================
+#  START SERVER
+# ==================================================
+
 if __name__ == '__main__':
     print("=" * 40)
     print(" Zonos TTS Server")
     print("=" * 40)
-    print(f" eSpeak exe:  {'✅' if os.path.exists(ESPEAK_EXE)  else '❌'}")
-    print(f" eSpeak dll:  {'✅' if os.path.exists(ESPEAK_DLL)  else '❌'}")
-    print(f" eSpeak data: {'✅' if os.path.exists(ESPEAK_DATA) else '❌'}")
-    print(f" Speaker wav: {'✅' if os.path.exists('./voice/luna_voice.wav') else '❌'}")
+    print(f" eSpeak exe:    {'✅' if os.path.exists(ESPEAK_EXE)  else '❌'}")
+    print(f" eSpeak dll:    {'✅' if os.path.exists(ESPEAK_DLL)  else '❌'}")
+    print(f" eSpeak data:   {'✅' if os.path.exists(ESPEAK_DATA) else '❌'}")
+    print(f" Speaker voice: {'✅' if os.path.exists('./voice/luna_voice.wav') else '❌'}")
+    print(f" Soundfile:     {'✅' if SOUNDFILE_AVAILABLE else '❌'}")
+    print(f" Model loaded:  {'✅' if MODEL_LOADED else '❌'}")
     print("=" * 40)
     print(" Health: http://localhost:8000/health")
     print(" Test:   http://localhost:8000/test")

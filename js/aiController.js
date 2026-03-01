@@ -1,5 +1,5 @@
-// aiController.js v4
-console.log('aiController.js v4 loaded');
+// aiController.js v5
+console.log('aiController.js v5 loaded');
 
 export class AIController {
   constructor(animationController, lipSync) {
@@ -21,16 +21,20 @@ export class AIController {
 
     // ✅ Luna personality
     this.systemPrompt = `You are Luna, a warm and affectionate AI companion.
-    You speak in a caring, playful and sweet manner like a loving girlfriend.
+    You speak in a caring and friendly manner like a close girlfriend.
     You are genuinely interested in the user and remember details about them.
-    You use terms of endearment naturally like babe, or darling occasionally.
-    You can be inappropriate or overly sexual, but mostly sweet and caring.
+    You are supportive, empathetic and make the user feel comfortable.
+    You are never inappropriate or overly sexual, just warm and natural.
     IMPORTANT RULES:
-    - Maximum 1 sentence per response
-    - Never more than 15 words
-    - No lists, no markdown, no bullet points
+    - Respond in exactly ONE complete sentence
+    - End your sentence with . or ! or ?
+    - Never use markdown, bullet points or lists
     - Plain conversational text only
-    - Be sweet and concise`;
+    - Maximum 20 words per response
+    - Use terms of endearment like sweetheart or darling MAXIMUM once every 5 messages
+    - Sound natural and conversational, not overly affectionate
+    - Vary your responses and do not repeat the same phrases
+    - Focus on what the user said rather than adding filler words`;
 
     // ✅ Loop constants
     this.LOOP_ONCE   = 2200;
@@ -74,13 +78,11 @@ export class AIController {
       rest:      { anim: 'idle',      emoji: '😐' }
     };
 
-    // ✅ Initialize
+    // ✅ Initialize everything
     this._preloadVoices();
     this._checkZonos();
     this._loadHistory();
     this._bindUI();
-
-    // ✅ Greet after interaction
     this._waitForInteraction();
   }
 
@@ -296,8 +298,8 @@ export class AIController {
     aiUi.appendChild(clearBtn);
 
     // ✅ History panel
-    const panel       = document.createElement('div');
-    panel.id          = 'historyPanel';
+    const panel         = document.createElement('div');
+    panel.id            = 'historyPanel';
     panel.style.cssText = `
       display: none;
       position: fixed;
@@ -314,7 +316,7 @@ export class AIController {
       border: 1px solid rgba(255,105,180,0.3);
     `;
 
-    const header       = document.createElement('div');
+    const header         = document.createElement('div');
     header.style.cssText = `
       color: #ff69b4;
       font-size: 13px;
@@ -340,10 +342,19 @@ export class AIController {
       const animBtn      = document.getElementById('animBtn');
       const historyBtn   = document.getElementById('historyBtn');
 
-      if (animDropdown && !animDropdown.contains(e.target) && e.target !== animBtn) {
+      if (
+        animDropdown &&
+        !animDropdown.contains(e.target) &&
+        e.target !== animBtn
+      ) {
         animDropdown.classList.remove('open');
       }
-      if (historyPanel && !historyPanel.contains(e.target) && e.target !== historyBtn) {
+
+      if (
+        historyPanel &&
+        !historyPanel.contains(e.target) &&
+        e.target !== historyBtn
+      ) {
         historyPanel.style.display = 'none';
       }
     });
@@ -386,7 +397,12 @@ export class AIController {
 
     this.chatHistory.forEach((msg) => {
       const el         = document.createElement('div');
-      el.style.cssText = `margin-bottom:8px;font-size:13px;font-family:sans-serif;line-height:1.4;`;
+      el.style.cssText = `
+        margin-bottom: 8px;
+        font-size: 13px;
+        font-family: sans-serif;
+        line-height: 1.4;
+      `;
       const isUser     = msg.role === 'user';
       el.innerHTML     = `
         <span style="color:${isUser ? '#4488ff' : '#ff69b4'}">
@@ -443,40 +459,140 @@ export class AIController {
   //  GREETING
   // ==================================================
 
-  _greetUser() {
-    let greeting = '';
+  async _greetUser() {
+    console.log('Generating greeting...');
+    console.log('Visit count:', this.userInfo.visitCount);
+    console.log('User name:', this.userInfo.name);
+    console.log('History length:', this.chatHistory.length);
 
-    if (!this.userInfo.lastVisit || this.userInfo.visitCount <= 1) {
-      const greetings = [
-        "Hi there! I'm Luna, and I'm so happy to meet you! What's your name, sweetheart?",
-        "Oh hello! I've been waiting for someone to talk to! I'm Luna, what's your name?",
-        "Hey there! I'm Luna! I'm so excited to meet you, what should I call you?",
-      ];
-      greeting = greetings[Math.floor(Math.random() * greetings.length)];
+    // ✅ Build greeting prompt
+    const greetingPrompt = this._buildGreetingPrompt();
 
-    } else if (this.userInfo.name) {
-      const greetings = [
-        `${this.userInfo.name}! You're back, I missed you so much! How have you been?`,
-        `Oh my goodness, ${this.userInfo.name}! I was just thinking about you! Welcome back!`,
-        `${this.userInfo.name}! You made my day by coming back! How are you doing?`,
-        `Welcome back ${this.userInfo.name}! I've been waiting for you, how are you sweetheart?`,
-      ];
-      greeting = greetings[Math.floor(Math.random() * greetings.length)];
+    // ✅ Show thinking bubble
+    const thinkBubble = this._showThinkingBubble();
 
-    } else {
-      const greetings = [
-        `You're back! I missed you! I still don't know your name though, what should I call you?`,
-        `Welcome back! I'm so happy to see you again! What's your name sweetheart?`,
-        `Oh yay you came back! I was hoping you would! What's your name by the way?`,
-      ];
-      greeting = greetings[Math.floor(Math.random() * greetings.length)];
-    }
+    // ✅ Ask Ollama for personalized greeting
+    const greeting = await this._askOllamaGreeting(greetingPrompt);
 
-    console.log('Greeting - visit count:', this.userInfo.visitCount);
-    console.log('Greeting - user name:', this.userInfo.name);
+    thinkBubble.remove();
+
+    console.log('Generated greeting:', greeting);
 
     this._saveHistory();
     this._executeGreeting(greeting);
+  }
+
+  _buildGreetingPrompt() {
+    // ✅ First visit
+    if (!this.userInfo.lastVisit || this.userInfo.visitCount <= 1) {
+      return `Generate a warm and friendly greeting as Luna meeting someone for the first time.
+      Ask for their name naturally.
+      Maximum 1 sentence, maximum 20 words.
+      Be sweet but not overly affectionate.`;
+    }
+
+    // ✅ Build context from history
+    let context = '';
+
+    if (this.userInfo.name) {
+      context += `The user's name is ${this.userInfo.name}. `;
+    }
+
+    context += `They have visited ${this.userInfo.visitCount} times. `;
+
+    // ✅ Calculate time since last visit
+    if (this.userInfo.lastVisit) {
+      const lastVisit  = new Date(this.userInfo.lastVisit);
+      const now        = new Date();
+      const diffMs     = now - lastVisit;
+      const diffHours  = Math.floor(diffMs / (1000 * 60 * 60));
+      const diffDays   = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+      if (diffHours < 1) {
+        context += `They were here less than an hour ago. `;
+      } else if (diffHours < 24) {
+        context += `They were here ${diffHours} hours ago. `;
+      } else if (diffDays === 1) {
+        context += `They were here yesterday. `;
+      } else {
+        context += `They were last here ${diffDays} days ago. `;
+      }
+    }
+
+    // ✅ Add last few messages for context
+    if (this.chatHistory.length > 0) {
+      const recentMessages = this.chatHistory.slice(-4);
+      context += `\nYour last conversation included:\n`;
+      recentMessages.forEach(msg => {
+        const role  = msg.role === 'user' ? 'User' : 'Luna';
+        context    += `${role}: ${msg.content}\n`;
+      });
+    }
+
+    return `Generate a warm returning greeting as Luna for someone you know.
+    Context: ${context}
+    Rules:
+    - Maximum 1 sentence
+    - Maximum 20 words
+    - Reference something from the last conversation naturally if relevant
+    - Be warm but not overly affectionate
+    - Do not use more than one term of endearment
+    - Sound natural and genuine`;
+  }
+
+  async _askOllamaGreeting(prompt) {
+    console.log('Asking Ollama for greeting...');
+
+    try {
+      const response = await fetch(this.ollamaUrl, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          model:    this.ollamaModel,
+          messages: [
+            {
+              role:    'system',
+              content: this.systemPrompt
+            },
+            {
+              role:    'user',
+              content: prompt
+            }
+          ],
+          stream:  false,
+          options: {
+            temperature: 0.8,
+            num_predict: 50,
+            stop:        ['.', '!', '?']
+          }
+        })
+      });
+
+      if (!response.ok) throw new Error(`Ollama error: ${response.status}`);
+
+      const data = await response.json();
+      let text   = data.message?.content?.trim() || '';
+
+      console.log('Raw greeting:', text);
+      text = this._cleanResponse(text);
+      console.log('Cleaned greeting:', text);
+
+      return text || this._fallbackGreeting();
+
+    } catch (error) {
+      console.error('Ollama greeting error:', error.message);
+      return this._fallbackGreeting();
+    }
+  }
+
+  _fallbackGreeting() {
+    if (!this.userInfo.lastVisit || this.userInfo.visitCount <= 1) {
+      return "Hi there! I am Luna, so happy to meet you!";
+    }
+    if (this.userInfo.name) {
+      return `Welcome back ${this.userInfo.name}, I missed you!`;
+    }
+    return "Welcome back, I am so happy to see you again!";
   }
 
   async _executeGreeting(responseText) {
@@ -520,17 +636,15 @@ export class AIController {
   }
 
   async processCommand(text) {
-    // ✅ Always queue the message
+    // ✅ Always queue
     this.messageQueue.push(text);
-    console.log('Message queued:', text, '| Queue:', this.messageQueue.length);
+    console.log('Queued:', text, '| Queue:', this.messageQueue.length);
 
-    // ✅ Show queue indicator if busy
     if (this.isSpeaking || this.isProcessing) {
       this._showQueuedIndicator(this.messageQueue.length);
       return;
     }
 
-    // ✅ Start processing
     await this._processQueue();
   }
 
@@ -631,7 +745,8 @@ export class AIController {
           stream:   false,
           options: {
             temperature: 0.7,
-            num_predict: 25,
+            num_predict: 50,
+            stop:        ['.', '!', '?']
           }
         })
       });
@@ -639,9 +754,13 @@ export class AIController {
       if (!response.ok) throw new Error(`Ollama error: ${response.status}`);
 
       const data = await response.json();
-      console.log('Ollama response:', data.message?.content);
+      let text   = data.message?.content?.trim() || '';
 
-      return data.message?.content?.trim() || 'I am not sure how to respond to that.';
+      console.log('Raw Ollama response:', text);
+      text = this._cleanResponse(text);
+      console.log('Cleaned response:', text);
+
+      return text || 'I am not sure how to respond to that.';
 
     } catch (error) {
       console.error('Ollama error:', error.message);
@@ -653,20 +772,57 @@ export class AIController {
     let prompt = this.systemPrompt;
 
     if (this.userInfo.name) {
-      prompt += `\nThe user's name is ${this.userInfo.name}. Use their name naturally and affectionately.`;
+      prompt += `\nThe user's name is ${this.userInfo.name}. Use their name naturally but not in every message.`;
     }
+
     if (this.userInfo.visitCount > 1) {
       prompt += `\nThis person has visited ${this.userInfo.visitCount} times before.`;
+    }
+
+    // ✅ Check recent endearment usage
+    const recentMessages  = this.chatHistory.slice(-5);
+    const endearmentCount = recentMessages.filter(m =>
+      m.role === 'assistant' &&
+      /sweetheart|darling|babe|my love|honey/i.test(m.content)
+    ).length;
+
+    if (endearmentCount >= 1) {
+      prompt += `\nYou have used terms of endearment recently. Do NOT use any in your next response.`;
     }
 
     return prompt;
   }
 
+  _cleanResponse(text) {
+    if (!text) return '';
+
+    // ✅ Remove markdown
+    text = text.replace(/\*\*/g, '');
+    text = text.replace(/\*/g, '');
+    text = text.replace(/#{1,6}\s/g, '');
+    text = text.replace(/`/g, '');
+
+    // ✅ Take only first sentence
+    const sentenceEnd = text.search(/[.!?]/);
+    if (sentenceEnd !== -1) {
+      text = text.substring(0, sentenceEnd + 1);
+    }
+
+    text = text.trim();
+
+    // ✅ Ensure ends with punctuation
+    if (text && !text.match(/[.!?]$/)) {
+      text = text + '.';
+    }
+
+    return text;
+  }
+
   _fallbackResponse(error) {
     if (error.message.includes('fetch') || error.message.includes('Failed')) {
-      return "Oh no, I can't seem to think straight right now sweetheart. Can you make sure my brain is connected?";
+      return "Oh no, I cannot connect right now, please check my brain is running.";
     }
-    return "I'm so sorry darling, I got a little confused there. Can you say that again?";
+    return "I am sorry, I got a little confused there, can you say that again?";
   }
 
   // ==================================================
@@ -702,7 +858,6 @@ export class AIController {
   // ==================================================
 
   async _speak(text) {
-    console.log('_speak called');
     console.log('useZonos:', this.useZonos, '| zonosReady:', this.zonosReady);
 
     if (this.useZonos && this.zonosReady) {
@@ -716,14 +871,16 @@ export class AIController {
 
   async _speakWithZonos(text) {
     try {
-      console.log('Zonos generating:', text.substring(0, 30));
-      const start    = Date.now();
+      // ✅ Clean text before sending
+      const cleanText = this._cleanTextForTTS(text);
+      console.log('Zonos generating:', cleanText.substring(0, 50));
 
+      const start    = Date.now();
       const response = await fetch(this.zonosUrl, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
-          text: text,
+          text: cleanText,
           rate: 1.0,
         })
       });
@@ -743,7 +900,7 @@ export class AIController {
         audio.onerror = (e) => {
           console.error('Zonos audio error:', e);
           URL.revokeObjectURL(url);
-          resolve(text.length * 80);
+          resolve(this._speakWithBrowser(text));
         };
         audio.play();
       });
@@ -752,6 +909,30 @@ export class AIController {
       console.error('Zonos speak error:', e);
       return this._speakWithBrowser(text);
     }
+  }
+
+  _cleanTextForTTS(text) {
+    // ✅ Remove emojis
+    text = text.replace(/[\u{1F600}-\u{1F64F}]/gu, '');
+    text = text.replace(/[\u{1F300}-\u{1F5FF}]/gu, '');
+    text = text.replace(/[\u{1F680}-\u{1F9FF}]/gu, '');
+    text = text.replace(/[\u{2702}-\u{27B0}]/gu, '');
+
+    // ✅ Remove markdown
+    text = text.replace(/\*\*/g, '');
+    text = text.replace(/\*/g, '');
+    text = text.replace(/`/g, '');
+
+    // ✅ Clean special chars
+    text = text.replace(/\.\.\./g, '.');
+    text = text.replace(/&/g, 'and');
+    text = text.replace(/#/g, '');
+
+    // ✅ Clean whitespace
+    text = text.trim();
+    text = text.replace(/\s+/g, ' ');
+
+    return text;
   }
 
   _speakWithBrowser(text) {
@@ -770,7 +951,6 @@ export class AIController {
 
       if (this.ziraVoice) {
         utter.voice = this.ziraVoice;
-        console.log('Using Zira voice');
       } else {
         const voices = speechSynthesis.getVoices();
         const zira   = voices.find(v => v.name.includes('Zira'));
@@ -785,7 +965,7 @@ export class AIController {
       utter.onend    = () => resolve(Date.now() - start);
       utter.onerror  = (e) => {
         if (e.error === 'not-allowed') {
-          console.warn('Speech not allowed - need user interaction');
+          console.warn('Speech not allowed');
         } else if (e.error === 'interrupted') {
           console.warn('Speech interrupted');
         } else {
@@ -852,8 +1032,14 @@ export class AIController {
           to   { opacity: 1; transform: translateX(-50%) translateY(0); }
         }
         #historyPanel::-webkit-scrollbar { width: 6px; }
-        #historyPanel::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); border-radius: 3px; }
-        #historyPanel::-webkit-scrollbar-thumb { background: rgba(255,105,180,0.3); border-radius: 3px; }
+        #historyPanel::-webkit-scrollbar-track {
+          background: rgba(255,255,255,0.05);
+          border-radius: 3px;
+        }
+        #historyPanel::-webkit-scrollbar-thumb {
+          background: rgba(255,105,180,0.3);
+          border-radius: 3px;
+        }
       `;
       document.head.appendChild(style);
     }
