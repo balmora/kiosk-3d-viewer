@@ -27,6 +27,8 @@ libs/
 # Ignore voice samples (can be large)
 voice/*.wav
 voice/*.mp3
+*.bin
+*.onnx
 
 # Ignore any model cache files
 *.pt
