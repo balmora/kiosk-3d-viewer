@@ -24,13 +24,17 @@ models/*.gltf
 # Ignore downloaded libraries
 libs/
 
+# Keep the libs folder but ignore all files
+!voice/.gitkeep
+
 # Ignore voice samples (can be large)
 voice/*.wav
 voice/*.mp3
 voice/*.bin
 voice/*.onnx
-*.bin
-*.onnx
+
+# Keep the voice folder but ignore large files
+!voice/.gitkeep
 
 # Ignore any model cache files
 *.pt
