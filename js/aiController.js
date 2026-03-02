@@ -1,5 +1,5 @@
-// aiController.js v5
-console.log('aiController.js v5 loaded');
+// aiController.js v6
+console.log('aiController.js v6 loaded');
 
 export class AIController {
   constructor(animationController, lipSync) {
@@ -14,10 +14,12 @@ export class AIController {
     this.ollamaUrl   = 'http://localhost:11434/api/chat';
     this.ollamaModel = 'leeplenty/ellaria';
 
-    // ✅ Zonos settings
-    this.zonosUrl   = 'http://localhost:8000/tts';
-    this.useZonos   = true;
-    this.zonosReady = false;
+    // ✅ Kokoro TTS settings
+    this.kokoroUrl  = 'http://localhost:8000/tts/stream';
+    this.ttsUrl     = 'http://localhost:8000/tts';
+    this.useStream  = true;
+    this.ttsReady   = false;
+    this.ttsVoice   = 'af_sarah';
 
     // ✅ Luna personality
     this.systemPrompt = `You are Luna, a warm and affectionate AI companion.
@@ -78,9 +80,9 @@ export class AIController {
       rest:      { anim: 'idle',      emoji: '😐' }
     };
 
-    // ✅ Initialize everything
+    // ✅ Initialize
     this._preloadVoices();
-    this._checkZonos();
+    this._checkTTS();
     this._loadHistory();
     this._bindUI();
     this._waitForInteraction();
@@ -117,28 +119,27 @@ export class AIController {
   }
 
   // ==================================================
-  //  ZONOS CHECK
+  //  TTS CHECK
   // ==================================================
 
-  async _checkZonos() {
-    console.log('Checking Zonos at: http://localhost:8000/health');
+  async _checkTTS() {
+    console.log('Checking TTS server...');
     try {
       const response = await fetch('http://localhost:8000/health');
-      console.log('Zonos response status:', response.status);
-      const data = await response.json();
-      console.log('Zonos health:', data);
+      const data     = await response.json();
+      console.log('TTS health:', data);
 
       if (data.status === 'ok') {
-        this.zonosReady = true;
-        console.log('✅ Zonos TTS ready');
+        this.ttsReady = true;
+        console.log('✅ TTS ready:', data.model);
       } else {
-        this.zonosReady = false;
-        console.warn('⚠️ Zonos not ready:', data);
+        this.ttsReady = false;
+        console.warn('⚠️ TTS not ready');
       }
     } catch (e) {
-      this.zonosReady = false;
-      console.warn('⚠️ Zonos not available - using browser TTS');
-      console.error('Zonos error:', e.name, e.message);
+      this.ttsReady = false;
+      console.warn('⚠️ TTS not available - using browser TTS');
+      console.error('TTS error:', e.name, e.message);
     }
   }
 
@@ -154,7 +155,6 @@ export class AIController {
       console.log('User interaction detected');
       events.forEach(e => document.removeEventListener(e, onInteraction));
 
-      // ✅ Hide overlay
       const overlay = document.getElementById('startOverlay');
       if (overlay) {
         overlay.style.transition = 'opacity 0.5s ease';
@@ -211,7 +211,7 @@ export class AIController {
   _loadHistory() {
     try {
       const raw = localStorage.getItem(this.storageKey);
-      console.log('Loading history - data found:', raw ? 'YES' : 'NO');
+      console.log('Loading history:', raw ? 'YES' : 'NO');
 
       if (!raw) {
         this.userInfo.visitCount = 0;
@@ -389,7 +389,12 @@ export class AIController {
 
     if (this.chatHistory.length === 0) {
       messages.innerHTML = `
-        <div style="color:#ff69b4;text-align:center;font-size:13px;font-family:sans-serif;">
+        <div style="
+          color: #ff69b4;
+          text-align: center;
+          font-size: 13px;
+          font-family: sans-serif;
+        ">
           No messages yet, say hi to Luna! 💕
         </div>`;
       return;
@@ -403,12 +408,14 @@ export class AIController {
         font-family: sans-serif;
         line-height: 1.4;
       `;
-      const isUser     = msg.role === 'user';
-      el.innerHTML     = `
-        <span style="color:${isUser ? '#4488ff' : '#ff69b4'}">
+      const isUser = msg.role === 'user';
+      el.innerHTML = `
+        <span style="color: ${isUser ? '#4488ff' : '#ff69b4'}">
           ${isUser ? '👤 You' : '💕 Luna'}:
         </span>
-        <span style="color:#ddd">${msg.content}</span>
+        <span style="color: #ddd">
+          ${msg.content}
+        </span>
       `;
       messages.appendChild(el);
     });
@@ -463,20 +470,14 @@ export class AIController {
     console.log('Generating greeting...');
     console.log('Visit count:', this.userInfo.visitCount);
     console.log('User name:', this.userInfo.name);
-    console.log('History length:', this.chatHistory.length);
 
-    // ✅ Build greeting prompt
     const greetingPrompt = this._buildGreetingPrompt();
-
-    // ✅ Show thinking bubble
-    const thinkBubble = this._showThinkingBubble();
-
-    // ✅ Ask Ollama for personalized greeting
-    const greeting = await this._askOllamaGreeting(greetingPrompt);
+    const thinkBubble    = this._showThinkingBubble();
+    const greeting       = await this._askOllamaGreeting(greetingPrompt);
 
     thinkBubble.remove();
 
-    console.log('Generated greeting:', greeting);
+    console.log('Greeting:', greeting);
 
     this._saveHistory();
     this._executeGreeting(greeting);
@@ -491,7 +492,7 @@ export class AIController {
       Be sweet but not overly affectionate.`;
     }
 
-    // ✅ Build context from history
+    // ✅ Build context
     let context = '';
 
     if (this.userInfo.name) {
@@ -500,13 +501,12 @@ export class AIController {
 
     context += `They have visited ${this.userInfo.visitCount} times. `;
 
-    // ✅ Calculate time since last visit
+    // ✅ Time since last visit
     if (this.userInfo.lastVisit) {
-      const lastVisit  = new Date(this.userInfo.lastVisit);
-      const now        = new Date();
-      const diffMs     = now - lastVisit;
-      const diffHours  = Math.floor(diffMs / (1000 * 60 * 60));
-      const diffDays   = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+      const lastVisit = new Date(this.userInfo.lastVisit);
+      const now       = new Date();
+      const diffHours = Math.floor((now - lastVisit) / (1000 * 60 * 60));
+      const diffDays  = Math.floor((now - lastVisit) / (1000 * 60 * 60 * 24));
 
       if (diffHours < 1) {
         context += `They were here less than an hour ago. `;
@@ -519,11 +519,11 @@ export class AIController {
       }
     }
 
-    // ✅ Add last few messages for context
+    // ✅ Last few messages
     if (this.chatHistory.length > 0) {
-      const recentMessages = this.chatHistory.slice(-4);
-      context += `\nYour last conversation included:\n`;
-      recentMessages.forEach(msg => {
+      const recent = this.chatHistory.slice(-4);
+      context     += `\nYour last conversation:\n`;
+      recent.forEach(msg => {
         const role  = msg.role === 'user' ? 'User' : 'Luna';
         context    += `${role}: ${msg.content}\n`;
       });
@@ -534,9 +534,9 @@ export class AIController {
     Rules:
     - Maximum 1 sentence
     - Maximum 20 words
-    - Reference something from the last conversation naturally if relevant
+    - Reference something from last conversation naturally if relevant
     - Be warm but not overly affectionate
-    - Do not use more than one term of endearment
+    - Use maximum one term of endearment
     - Sound natural and genuine`;
   }
 
@@ -550,14 +550,8 @@ export class AIController {
         body:    JSON.stringify({
           model:    this.ollamaModel,
           messages: [
-            {
-              role:    'system',
-              content: this.systemPrompt
-            },
-            {
-              role:    'user',
-              content: prompt
-            }
+            { role: 'system', content: this.systemPrompt },
+            { role: 'user',   content: prompt            }
           ],
           stream:  false,
           options: {
@@ -580,7 +574,7 @@ export class AIController {
       return text || this._fallbackGreeting();
 
     } catch (error) {
-      console.error('Ollama greeting error:', error.message);
+      console.error('Greeting error:', error.message);
       return this._fallbackGreeting();
     }
   }
@@ -599,7 +593,7 @@ export class AIController {
     if (this.isSpeaking || this.isProcessing) return;
     this.isSpeaking = true;
 
-    console.log('Greeting:', responseText);
+    console.log('Speaking greeting:', responseText);
 
     const bubble = this._showSpeechBubble(responseText);
 
@@ -620,7 +614,7 @@ export class AIController {
     bubble.remove();
     this.isSpeaking = false;
 
-    // ✅ Process any queued messages after greeting
+    // ✅ Process any queued messages
     await this._processQueue();
   }
 
@@ -636,7 +630,6 @@ export class AIController {
   }
 
   async processCommand(text) {
-    // ✅ Always queue
     this.messageQueue.push(text);
     console.log('Queued:', text, '| Queue:', this.messageQueue.length);
 
@@ -668,19 +661,186 @@ export class AIController {
     const intent = this._detectIntent(lower);
 
     this._extractUserInfo(text);
-
-    const thinkBubble = this._showThinkingBubble();
-
     this._addToHistory('user', text);
 
-    const response = await this._askOllama(text);
+    if (this.useStream && this.ttsReady) {
+      await this._handleMessageStreaming(intent, text);
+    } else {
+      await this._handleMessageStandard(intent, text);
+    }
 
-    this._addToHistory('assistant', response);
     this._saveHistory();
     this._updateHistoryPanel();
+  }
+
+  // ==================================================
+  //  STREAMING HANDLER
+  // ==================================================
+
+  async _handleMessageStreaming(intent, text) {
+    console.log('Using streaming mode');
+
+    const thinkBubble = this._showThinkingBubble();
+    let   firstChunk  = true;
+    let   bubble      = null;
+    let   fullText    = '';
+
+    const messages = [
+      { role: 'system', content: this._buildSystemPrompt() },
+      ...this.chatHistory.slice(-this.maxHistory)
+    ];
+
+    try {
+      const response = await fetch(this.kokoroUrl, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          ollama_url: this.ollamaUrl,
+          messages:   messages,
+          model:      this.ollamaModel,
+          voice:      this.ttsVoice,
+          speed:      1.0,
+        })
+      });
+
+      if (!response.ok) throw new Error(`Stream error: ${response.status}`);
+
+      const reader     = response.body.getReader();
+      let   remainder  = new Uint8Array(0);
+      const audioQueue = [];
+      let   isPlaying  = false;
+
+      // ✅ Audio player
+      const playNext = async () => {
+        if (isPlaying || audioQueue.length === 0) return;
+        isPlaying = true;
+
+        const { sentence, audioBytes } = audioQueue.shift();
+
+        if (bubble) bubble.textContent = fullText;
+
+        const blob  = new Blob([audioBytes], { type: 'audio/wav' });
+        const url   = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+
+        await new Promise((resolve) => {
+          audio.onended = () => { URL.revokeObjectURL(url); resolve(); };
+          audio.onerror = () => { URL.revokeObjectURL(url); resolve(); };
+          audio.play();
+        });
+
+        isPlaying = false;
+        playNext();
+      };
+
+      // ✅ Read stream chunks
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const combined = new Uint8Array(remainder.length + value.length);
+        combined.set(remainder);
+        combined.set(value, remainder.length);
+
+        let offset = 0;
+
+        while (offset < combined.length) {
+          const newlineIdx = combined.indexOf(10, offset);
+          if (newlineIdx === -1) {
+            remainder = combined.slice(offset);
+            break;
+          }
+
+          const headerBytes = combined.slice(offset, newlineIdx);
+          const headerText  = new TextDecoder().decode(headerBytes);
+
+          let header;
+          try {
+            header = JSON.parse(headerText);
+          } catch (e) {
+            offset = newlineIdx + 1;
+            continue;
+          }
+
+          if (header.done) {
+            console.log('Stream complete');
+            offset = newlineIdx + 1;
+            break;
+          }
+
+          const audioStart = newlineIdx + 1;
+          const audioEnd   = audioStart + header.audio_size;
+
+          if (audioEnd > combined.length) {
+            remainder = combined.slice(offset);
+            break;
+          }
+
+          const audioBytes = combined.slice(audioStart, audioEnd);
+          offset           = audioEnd;
+          remainder        = new Uint8Array(0);
+
+          // ✅ First chunk setup
+          if (firstChunk) {
+            thinkBubble.remove();
+            firstChunk = false;
+            fullText   = header.sentence;
+            bubble     = this._showSpeechBubble(fullText);
+
+            this.animController.playAnimation(intent.anim, {
+              loop:         this.LOOP_ONCE,
+              returnToIdle: true
+            });
+            this.animController.startHeadBob(0.8);
+          } else {
+            fullText += ' ' + header.sentence;
+          }
+
+          console.log('Received sentence:', header.sentence);
+          audioQueue.push({ sentence: header.sentence, audioBytes });
+          playNext();
+        }
+      }
+
+      // ✅ Wait for all audio to finish
+      await new Promise((resolve) => {
+        const check = setInterval(() => {
+          if (!isPlaying && audioQueue.length === 0) {
+            clearInterval(check);
+            resolve();
+          }
+        }, 100);
+      });
+
+      if (fullText) {
+        this._addToHistory('assistant', fullText);
+      }
+
+    } catch (e) {
+      console.error('Streaming error:', e);
+      thinkBubble.remove();
+      await this._handleMessageStandard(intent, text);
+      return;
+    }
+
+    if (bubble) bubble.remove();
+    this.animController.stopHeadBob();
+    this.isSpeaking = false;
+  }
+
+  // ==================================================
+  //  STANDARD HANDLER
+  // ==================================================
+
+  async _handleMessageStandard(intent, text) {
+    console.log('Using standard mode');
+
+    const thinkBubble = this._showThinkingBubble();
+    const response    = await this._askOllama(text);
+
+    this._addToHistory('assistant', response);
 
     thinkBubble.remove();
-
     await this._execute(intent, response);
   }
 
@@ -756,7 +916,7 @@ export class AIController {
       const data = await response.json();
       let text   = data.message?.content?.trim() || '';
 
-      console.log('Raw Ollama response:', text);
+      console.log('Raw response:', text);
       text = this._cleanResponse(text);
       console.log('Cleaned response:', text);
 
@@ -779,7 +939,7 @@ export class AIController {
       prompt += `\nThis person has visited ${this.userInfo.visitCount} times before.`;
     }
 
-    // ✅ Check recent endearment usage
+    // ✅ Limit endearment usage
     const recentMessages  = this.chatHistory.slice(-5);
     const endearmentCount = recentMessages.filter(m =>
       m.role === 'assistant' &&
@@ -822,11 +982,11 @@ export class AIController {
     if (error.message.includes('fetch') || error.message.includes('Failed')) {
       return "Oh no, I cannot connect right now, please check my brain is running.";
     }
-    return "I am sorry, I got a little confused there, can you say that again?";
+    return "I am sorry, I got confused there, can you say that again?";
   }
 
   // ==================================================
-  //  EXECUTE
+  //  EXECUTE - used by standard mode and greeting
   // ==================================================
 
   async _execute(intent, responseText) {
@@ -844,7 +1004,6 @@ export class AIController {
     const duration = await this._speak(responseText);
     this.lipSync.startFromText(responseText, duration);
 
-    // ✅ Wait for speech to finish
     await new Promise(resolve => setTimeout(resolve, duration + 200));
 
     this.lipSync.stop();
@@ -854,38 +1013,38 @@ export class AIController {
   }
 
   // ==================================================
-  //  SPEECH
+  //  SPEECH - used by greeting and standard mode
   // ==================================================
 
   async _speak(text) {
-    console.log('useZonos:', this.useZonos, '| zonosReady:', this.zonosReady);
+    console.log('ttsReady:', this.ttsReady);
 
-    if (this.useZonos && this.zonosReady) {
-      console.log('Using Zonos TTS');
-      return this._speakWithZonos(text);
+    if (this.ttsReady) {
+      console.log('Using Kokoro TTS');
+      return this._speakWithKokoro(text);
     } else {
       console.log('Using browser TTS');
       return this._speakWithBrowser(text);
     }
   }
 
-  async _speakWithZonos(text) {
+  async _speakWithKokoro(text) {
     try {
-      // ✅ Clean text before sending
       const cleanText = this._cleanTextForTTS(text);
-      console.log('Zonos generating:', cleanText.substring(0, 50));
+      console.log('Kokoro generating:', cleanText.substring(0, 50));
 
       const start    = Date.now();
-      const response = await fetch(this.zonosUrl, {
+      const response = await fetch(this.ttsUrl, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
-          text: cleanText,
-          rate: 1.0,
+          text:  cleanText,
+          voice: this.ttsVoice,
+          speed: 1.0,
         })
       });
 
-      if (!response.ok) throw new Error(`Zonos error: ${response.status}`);
+      if (!response.ok) throw new Error(`Kokoro error: ${response.status}`);
 
       const blob  = await response.blob();
       const url   = URL.createObjectURL(blob);
@@ -894,11 +1053,11 @@ export class AIController {
       return new Promise((resolve) => {
         audio.onended = () => {
           URL.revokeObjectURL(url);
-          console.log('Zonos speech finished');
+          console.log('Kokoro speech finished');
           resolve(Date.now() - start);
         };
         audio.onerror = (e) => {
-          console.error('Zonos audio error:', e);
+          console.error('Kokoro audio error:', e);
           URL.revokeObjectURL(url);
           resolve(this._speakWithBrowser(text));
         };
@@ -906,32 +1065,24 @@ export class AIController {
       });
 
     } catch (e) {
-      console.error('Zonos speak error:', e);
+      console.error('Kokoro speak error:', e);
       return this._speakWithBrowser(text);
     }
   }
 
   _cleanTextForTTS(text) {
-    // ✅ Remove emojis
     text = text.replace(/[\u{1F600}-\u{1F64F}]/gu, '');
     text = text.replace(/[\u{1F300}-\u{1F5FF}]/gu, '');
     text = text.replace(/[\u{1F680}-\u{1F9FF}]/gu, '');
     text = text.replace(/[\u{2702}-\u{27B0}]/gu, '');
-
-    // ✅ Remove markdown
     text = text.replace(/\*\*/g, '');
     text = text.replace(/\*/g, '');
     text = text.replace(/`/g, '');
-
-    // ✅ Clean special chars
     text = text.replace(/\.\.\./g, '.');
     text = text.replace(/&/g, 'and');
     text = text.replace(/#/g, '');
-
-    // ✅ Clean whitespace
     text = text.trim();
     text = text.replace(/\s+/g, ' ');
-
     return text;
   }
 
@@ -1007,7 +1158,11 @@ export class AIController {
       top: 20px;
       left: 50%;
       transform: translateX(-50%);
-      background: linear-gradient(135deg, rgba(255,255,255,0.97), rgba(255,240,245,0.97));
+      background: linear-gradient(
+        135deg,
+        rgba(255,255,255,0.97),
+        rgba(255,240,245,0.97)
+      );
       color: #333;
       padding: 14px 20px;
       border-radius: 16px;
@@ -1028,10 +1183,18 @@ export class AIController {
       style.id          = 'bubble-style';
       style.textContent = `
         @keyframes fadeIn {
-          from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
-          to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+          from {
+            opacity: 0;
+            transform: translateX(-50%) translateY(-10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+          }
         }
-        #historyPanel::-webkit-scrollbar { width: 6px; }
+        #historyPanel::-webkit-scrollbar {
+          width: 6px;
+        }
         #historyPanel::-webkit-scrollbar-track {
           background: rgba(255,255,255,0.05);
           border-radius: 3px;

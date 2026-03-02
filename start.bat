@@ -20,11 +20,11 @@ start "Ollama" cmd /k "set OLLAMA_ORIGINS=* && ollama serve"
 timeout /t 3 /nobreak >nul
 echo  [OK] Ollama started
 
-:: ✅ Start Zonos TTS
-echo  [..] Starting Zonos TTS...
-start "Zonos TTS" cmd /k "C:\Apps\Zonos\venv\Scripts\activate && cd /d "C:\Users\Administrator\Desktop\Luna v0.01" && python zonos_server.py"
-timeout /t 8 /nobreak >nul
-echo  [OK] Zonos TTS started
+:: ✅ Start Kokoro TTS instead of Zonos
+echo  [..] Starting Kokoro TTS...
+start "Kokoro TTS" cmd /k "C:\Apps\Zonos\venv\Scripts\activate && cd /d "C:\Users\Administrator\Desktop\Luna v0.01" && python kokoro_server.py"
+timeout /t 5 /nobreak >nul
+echo  [OK] Kokoro TTS started
 
 :: ✅ Start web server
 echo  [..] Starting web server...
