@@ -27,6 +27,8 @@ libs/
 # Ignore voice samples (can be large)
 voice/*.wav
 voice/*.mp3
+voice/*.bin
+voice/*.onnx
 *.bin
 *.onnx
 
