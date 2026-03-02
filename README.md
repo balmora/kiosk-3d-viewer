@@ -18,10 +18,12 @@ A talking 3D model kiosk built with Three.js
 3. Download Three.js libraries + ollama
    Double-click download_libs.bat
 
-4. Start the server
+4. download a model into /model
+
+5. Start the server
    Double-click start.bat
 
-5. Open browser
+6. Open browser
    http://localhost:8080
 
 ## Project Structure
