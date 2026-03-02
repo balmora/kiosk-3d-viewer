@@ -25,7 +25,7 @@ models/*.gltf
 libs/
 
 # Keep the libs folder but ignore all files
-!voice/.gitkeep
+!libs/.gitkeep
 
 # Ignore voice samples (can be large)
 voice/*.wav

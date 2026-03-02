@@ -28,8 +28,8 @@ try:
     from kokoro_onnx import Kokoro
 
     # ✅ Paths to model files
-    MODEL_PATH  = "./kokoro-v1.0.onnx"
-    VOICES_PATH = "./voices-v1.0.bin"
+    MODEL_PATH  = "./voice/kokoro-v1.0.onnx"
+    VOICES_PATH = "./voice/voices-v1.0.bin"
 
     if not os.path.exists(MODEL_PATH):
         raise FileNotFoundError(f"Model not found: {MODEL_PATH}")
