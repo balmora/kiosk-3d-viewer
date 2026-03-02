@@ -22,7 +22,7 @@ models/*.gltf
 !models/.gitkeep
 
 # Ignore downloaded libraries
-libs/
+libs/*
 
 # Keep the libs folder but ignore all files
 !libs/.gitkeep
