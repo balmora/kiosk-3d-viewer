@@ -62,6 +62,7 @@ Type in the chat box to talk to Luna, or use these commands:
 ---
 
 ## Project Structure
+```bash
 kiosk-3d-viewer/
 ├── index.html
 ├── setup.bat ← run this first
@@ -80,7 +81,7 @@ kiosk-3d-viewer/
 ├── libs/ ← created by setup.bat
 ├── voices/ ← created by setup.bat
 └── models/ ← add your .gltf model here
-
+```
 ---
 
 ## Troubleshooting
