@@ -86,6 +86,16 @@ export const CONFIG = {
     level: 'info',
     useColors: true,
     useTimestamps: true
+  },
+
+  // Memory (Persistent multi-profile system)
+  memory: {
+    factExtractionEnabled: true,
+    maxFacts: 10,
+    factExtractionDebounceMs: 30000,
+    summaryInterval: 20,
+    maxMessagesWithSummary: 5,
+    summarizationDebounceMs: 60000
   }
 };
 

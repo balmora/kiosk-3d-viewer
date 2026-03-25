@@ -8,10 +8,42 @@ import { LipSync }             from './lipSync.js';
 import { AIController }        from './aiController.js';
 import { CONFIG }              from './config.js';
 
-// Set page title to avatar name
+/**
+ * Load character sheet from JSON file.
+ * Searches in same folder as model (./models/character.json) first,
+ * then falls back to project root (/character.json).
+ */
+async function loadCharacterSheet() {
+  const paths = [
+    './models/character.json',
+    './character.json'
+  ];
+
+  for (const path of paths) {
+    try {
+      console.log(`Trying to load character sheet from: ${path}`);
+      const response = await fetch(path);
+      console.log(`Response for ${path}:`, response.status, response.ok);
+      if (response.ok) {
+        const sheet = await response.json();
+        console.log(`Character sheet loaded from ${path}:`, sheet.identity?.name);
+        return sheet;
+      }
+    } catch (e) {
+      console.error(`Error loading ${path}:`, e.message);
+      // Try next path
+    }
+  }
+  console.warn('No character sheet found, using default personality');
+  return null;
+}
+
+// Set page title to avatar name (will update after character sheet loads)
 document.title = CONFIG.avatar.name;
 
 async function init() {
+  // Load character sheet before initializing AI
+  const characterSheet = await loadCharacterSheet();
   const canvas = document.getElementById('viewer');
   const { scene, camera, renderer } = createScene(canvas, CONFIG.camera.fov);
 
@@ -57,7 +89,15 @@ async function init() {
   animController.setMorphTargets(morphTargets);
 
   const lipSync = new LipSync(morphTargets, bones);
-  const aiController = new AIController(animController, lipSync);
+  const aiController = new AIController(animController, lipSync, characterSheet);
+
+  // Update page title and input placeholder with character name
+  const avatarName = characterSheet?.identity?.name || CONFIG.avatar.name;
+  document.title = avatarName;
+  const promptInput = document.getElementById('aiPrompt');
+  if (promptInput) {
+    promptInput.placeholder = `Talk to ${avatarName}...`;
+  }
 
   window.avatar = { animController, lipSync, aiController };
 
