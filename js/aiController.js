@@ -10,20 +10,27 @@ import { logger } from './logger.js';
 logger.info('aiController.js v6 loaded');
 
 export class AIController {
-  constructor(animationController, lipSync) {
+  constructor(animationController, lipSync, characterSheet = null) {
     this.animController = animationController;
     this.lipSync        = lipSync;
     this.isSpeaking     = false;
     this.isProcessing   = false;
     this.messageQueue   = [];
 
+    // Character sheet (optional - for custom personality)
+    this.characterSheet = characterSheet;
+    this.avatarName = characterSheet?.identity?.name || CONFIG.avatar.name;
+
     // Initialize dependencies
     this.chatMemory = new ChatMemory('luna_chat_history', CONFIG.ollama.maxHistory);
+    this.chatMemory.setAI(this); // Enable ChatMemory to call back for Ollama (fact extraction/summarization)
     this.maxHistory = this.chatMemory.maxHistory;
 
     // State derived from chatMemory
     this.chatHistory = this.chatMemory.chatHistory;
     this.userInfo    = this.chatMemory.userInfo;
+    this.userFacts   = this.chatMemory.userFacts || [];
+    this.memorySummary = this.chatMemory.memorySummary || '';
 
     // Configuration (from config.js)
     const urls = getTtsUrls();
@@ -37,22 +44,16 @@ logger.info('TTS URLs configured:', { tts: this.ttsUrl, stream: this.kokoroUrl }
     this.ttsVoice    = CONFIG.tts.voice;
     this.headBobIntensity = CONFIG.animation.headBobIntensity;
 
-    // ${CONFIG.avatar.name} personality prompt
-    this.systemPrompt = `You are ${CONFIG.avatar.name}, a warm and affectionate AI companion.
-    You speak in a caring and friendly manner like a close girlfriend.
-    You are genuinely interested in the user and remember details about them.
-    You are supportive, empathetic and make the user feel comfortable.
-    You are never inappropriate or overly sexual, just warm and natural.
-    IMPORTANT RULES:
-    - Respond in exactly ONE complete sentence
-    - End your sentence with . or ! or ?
-    - Never use markdown, bullet points or lists
-    - Plain conversational text only
-    - Maximum 20 words per response
-    - Use terms of endearment like sweetheart or darling MAXIMUM once every 5 messages
-    - Sound natural and conversational, not overly affectionate
-    - Vary your responses and do not repeat the same phrases
-    - Focus on what the user said rather than adding filler words`;
+    // Fact extraction debouncing
+    this.lastFactExtraction = 0;
+    this.factExtractionDebounceMs = CONFIG.memory.factExtractionDebounceMs || 30000;
+
+    // Summarization debouncing
+    this.lastSummarization = 0;
+    this.summarizationDebounceMs = CONFIG.memory.summarizationDebounceMs || 60000;
+
+    // Build system prompt from character sheet or use default
+    this.systemPrompt = this._buildCharacterPrompt(this.avatarName);
 
     // Loop constants - using THREE.Loop*
     this.LOOP_ONCE   = THREE.LoopOnce;
@@ -188,6 +189,130 @@ logger.info('TTS URLs configured:', { tts: this.ttsUrl, stream: this.kokoroUrl }
     }
   }
 
+  // Call Ollama with a structured schema for JSON output
+  async _callOllamaForJSON(messages, schema, options = {}) {
+    const prompt = `You are a helpful assistant that responds ONLY with valid JSON matching this schema:
+
+${JSON.stringify(schema, null, 2)}
+
+Important: Output ONLY the JSON object, no other text.`;
+
+    const fullMessages = [
+      { role: 'system', content: prompt },
+      ...messages
+    ];
+
+    try {
+      const response = await fetchWithRetry(() =>
+        fetchWithTimeout(this.ollamaUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: this.ollamaModel,
+            messages: fullMessages,
+            stream: false,
+            options: {
+              temperature: options.temperature || 0.6,
+              num_predict: options.num_predict || 100,
+              stop: ['\n\n', '```']
+            }
+          })
+        }, 10000), 2);
+
+      if (!response.ok) throw new Error(`Ollama request failed: ${response.status}`);
+      const data = await response.json();
+      let content = data.message?.content?.trim();
+
+      if (!content) throw new Error('Empty response from Ollama');
+
+      // Remove markdown code blocks
+      content = content.replace(/```json\s*/, '').replace(/```\s*$/, '').trim();
+
+      // Try to find JSON object
+      let jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        // Try to find JSON array
+        jsonMatch = content.match(/\[[\s\S]*\]/);
+      }
+
+      if (!jsonMatch) throw new Error('No JSON found in response');
+
+      return JSON.parse(jsonMatch[0]);
+    } catch (e) {
+      logger.error('Ollama JSON call failed:', e.message);
+      throw e;
+    }
+  }
+
+  // Summarize conversation history
+  async _summarizeConversation(history) {
+    const recentMessages = history.slice(-20); // Last 20 messages for context
+
+    const messages = recentMessages.map(m => ({
+      role: m.role,
+      content: m.content.substring(0, 200) // Limit per message for token count
+    }));
+
+    const schema = {
+      type: 'object',
+      properties: {
+        summary: {
+          type: 'string',
+          description: 'A concise summary (2-3 sentences) of the conversation, capturing key topics, user interests, and important details'
+        }
+      },
+      required: ['summary']
+    };
+
+    try {
+      const result = await this._callOllamaForJSON(messages, schema, {
+        temperature: 0.5,
+        num_predict: 150
+      });
+      return result.summary || '';
+    } catch (e) {
+      logger.warn('Summarization failed:', e.message);
+      return '';
+    }
+  }
+
+  // Extract structured facts from user text
+  async _extractFactsFromText(text) {
+    const messages = [
+      { role: 'user', content: text }
+    ];
+
+    const schema = {
+      type: 'object',
+      properties: {
+        facts: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              category: { type: 'string', enum: ['preference', 'biographical', 'interest', 'activity', 'other'] },
+              text: { type: 'string' },
+              confidence: { type: 'number', minimum: 0, maximum: 1 }
+            },
+            required: ['category', 'text', 'confidence']
+          }
+        }
+      },
+      required: ['facts']
+    };
+
+    try {
+      const result = await this._callOllamaForJSON(messages, schema);
+      return result.facts || [];
+    } catch (e) {
+      // Graceful degradation: return empty array, no error logged (it's best effort)
+      return [];
+    }
+  }
+  // ==================================================
+  //  INTERACTION UNLOCK
+  // ==================================================
+
 
   // ==================================================
   //  INTERACTION UNLOCK
@@ -246,10 +371,20 @@ logger.info('TTS URLs configured:', { tts: this.ttsUrl, stream: this.kokoroUrl }
 
   _loadHistory() {
     this.chatMemory.load();
+    this._syncFromMemory();
+  }
+
+  _syncFromMemory() {
+    // Synchronize AIController state with active profile in chatMemory
+    this.chatHistory   = this.chatMemory.chatHistory;
+    this.userInfo      = this.chatMemory.userInfo;
+    this.userFacts     = this.chatMemory.userFacts || [];
+    this.memorySummary = this.chatMemory.memorySummary || '';
   }
 
   _clearHistory() {
     this.chatMemory.clear();
+    this._syncFromMemory();
     this._updateHistoryPanel();
   }
 
@@ -295,7 +430,7 @@ logger.info('TTS URLs configured:', { tts: this.ttsUrl, stream: this.kokoroUrl }
     clearBtn.textContent = 'trash';
     clearBtn.title       = 'Clear chat history';
     clearBtn.addEventListener('click', () => {
-      if (confirm(`Clear all chat history with ${CONFIG.avatar.name}?`)) {
+      if (confirm(`Clear all chat history with ${this.avatarName}?`)) {
         this._clearHistory();
       }
     });
@@ -337,8 +472,23 @@ logger.info('TTS URLs configured:', { tts: this.ttsUrl, stream: this.kokoroUrl }
       font-family: sans-serif;
       font-weight: bold;
     `;
-    header.textContent = `heart Chat with ${CONFIG.avatar.name}`;
+    header.textContent = `heart Chat with ${this.avatarName}`;
     panel.appendChild(header);
+
+    // Profile info section
+    const profileInfo     = document.createElement('div');
+    profileInfo.id        = 'profileInfo';
+    profileInfo.style.cssText = `
+      font-size: 11px;
+      color: #aaa;
+      margin-bottom: 8px;
+      padding: 6px 8px;
+      background: rgba(255,255,255,0.05);
+      border-radius: 6px;
+      font-family: sans-serif;
+      text-align: center;
+    `;
+    panel.appendChild(profileInfo);
 
     const messages  = document.createElement('div');
     messages.id     = 'historyMessages';
@@ -396,7 +546,25 @@ logger.info('TTS URLs configured:', { tts: this.ttsUrl, stream: this.kokoroUrl }
 
   _updateHistoryPanel() {
     const messages = document.getElementById('historyMessages');
+    const profileInfo = document.getElementById('profileInfo');
     if (!messages) return;
+
+    // Update profile info
+    if (profileInfo) {
+      const activeProfile = this.chatMemory.getActiveProfile() || 'default';
+      const profileName = this.userInfo.name || activeProfile;
+      const visits = this.userInfo.visitCount || 0;
+      const factsCount = this.userFacts.length;
+      const summaryPreview = this.memorySummary ? ' • Summary active' : '';
+
+      profileInfo.innerHTML = `
+        <strong>${profileName}</strong> • ${visits} visits
+        ${factsCount > 0 ? `• ${factsCount} facts` : ''}
+        ${summaryPreview}
+      `;
+    }
+
+    // Update messages
     messages.innerHTML = '';
 
     if (this.chatHistory.length === 0) {
@@ -407,7 +575,7 @@ logger.info('TTS URLs configured:', { tts: this.ttsUrl, stream: this.kokoroUrl }
           font-size: 13px;
           font-family: sans-serif;
         ">
-          No messages yet, say hi to ${CONFIG.avatar.name}! heart
+          No messages yet, say hi to ${this.avatarName}! heart
         </div>`;
       return;
     }
@@ -423,7 +591,7 @@ logger.info('TTS URLs configured:', { tts: this.ttsUrl, stream: this.kokoroUrl }
       const isUser = msg.role === 'user';
       el.innerHTML = `
         <span style="color: ${isUser ? '#4488ff' : '#ff69b4'}">
-          ${isUser ? 'person You' : 'heart ' + CONFIG.avatar.name}:
+          ${isUser ? 'person You' : 'heart ' + this.avatarName}:
         </span>
         <span style="color: #ddd">
           ${msg.content}
@@ -498,7 +666,7 @@ logger.info('TTS URLs configured:', { tts: this.ttsUrl, stream: this.kokoroUrl }
   _buildGreetingPrompt() {
     // OK First visit
     if (!this.userInfo.lastVisit || this.userInfo.visitCount <= 1) {
-      return `Generate a warm and friendly greeting as ${CONFIG.avatar.name} meeting someone for the first time.
+      return `Generate a warm and friendly greeting as ${this.avatarName} meeting someone for the first time.
       Ask for their name naturally.
       Maximum 1 sentence, maximum 20 words.
       Be sweet but not overly affectionate.`;
@@ -536,12 +704,12 @@ logger.info('TTS URLs configured:', { tts: this.ttsUrl, stream: this.kokoroUrl }
       const recent = this.chatHistory.slice(-4);
       context     += `\nYour last conversation:\n`;
       recent.forEach(msg => {
-        const role  = msg.role === 'user' ? 'User' : CONFIG.avatar.name;
+        const role  = msg.role === 'user' ? 'User' : this.avatarName;
         context    += `${role}: ${msg.content}\n`;
       });
     }
 
-    return `Generate a warm returning greeting as ${CONFIG.avatar.name} for someone you know.
+    return `Generate a warm returning greeting as ${this.avatarName} for someone you know.
     Context: ${context}
     Rules:
     - Maximum 1 sentence
@@ -595,7 +763,7 @@ logger.info('TTS URLs configured:', { tts: this.ttsUrl, stream: this.kokoroUrl }
 
   _fallbackGreeting() {
     if (!this.userInfo.lastVisit || this.userInfo.visitCount <= 1) {
-      return `Hi there! I am ${CONFIG.avatar.name}, so happy to meet you!`;
+      return `Hi there! I am ${this.avatarName}, so happy to meet you!`;
     }
     if (this.userInfo.name) {
       return `Welcome back ${this.userInfo.name}, I missed you!`;
@@ -685,6 +853,21 @@ logger.info('TTS URLs configured:', { tts: this.ttsUrl, stream: this.kokoroUrl }
 
     this._saveHistory();
     this._updateHistoryPanel();
+
+    // Fire-and-forget fact extraction with debouncing
+    const now = Date.now();
+    if (now - this.lastFactExtraction > this.factExtractionDebounceMs) {
+      this.lastFactExtraction = now;
+      this.chatMemory.extractFacts(text).catch(err =>
+        logger.warn('Fact extraction error:', err.message)
+      );
+    }
+
+    // Fire-and-forget summarization with debouncing (no .catch needed - internal handling)
+    if (now - this.lastSummarization > this.summarizationDebounceMs) {
+      this.lastSummarization = now;
+      this.chatMemory.maybeSummarize();
+    }
   }
 
   // ==================================================
@@ -922,8 +1105,16 @@ logger.info('TTS URLs configured:', { tts: this.ttsUrl, stream: this.kokoroUrl }
     for (const pattern of patterns) {
       const match = text.match(pattern);
       if (match) {
-        this.userInfo.name = match[1];
-        logger.info('Learned name:', this.userInfo.name);
+        const name = match[1];
+        this.userInfo.name = name;
+
+        // Detect or create profile based on name, switch to it
+        const profileKey = this.chatMemory.detectOrCreateProfile(name);
+        logger.info(`Profile "${profileKey}" activated for user: ${name}`);
+
+        // Sync all state from new profile
+        this._syncFromMemory();
+
         this._saveHistory();
         break;
       }
@@ -1000,6 +1191,122 @@ logger.info('TTS URLs configured:', { tts: this.ttsUrl, stream: this.kokoroUrl }
     }
   }
 
+  /**
+   * Build system prompt from character sheet.
+   * This creates the BASE personality prompt - memory is appended by _buildSystemPrompt().
+   */
+  _buildCharacterPrompt(avatarName) {
+    const sheet = this.characterSheet;
+
+    if (!sheet) {
+      // Fallback to default Luna personality
+      return `You are ${avatarName}, a warm and affectionate companion.
+You speak in a caring and friendly manner like a close friend.
+You are genuinely interested in the user and remember details about them.
+You are supportive, empathetic and make the user feel comfortable.
+You are never inappropriate or overly sexual, just warm and natural.
+IMPORTANT RULES:
+- Respond in exactly ONE complete sentence
+- End your sentence with . or ! or ?
+- Never use markdown, bullet points or lists
+- Plain conversational text only
+- Maximum 20 words per response
+- Use terms of endearment like sweetheart or darling MAXIMUM once every 5 messages
+- Sound natural and conversational, not overly affectionate
+- Vary your responses and do not repeat the same phrases
+- Focus on what the user said rather than adding filler words
+- NEVER say you are an AI, that you lack a physical body, or cannot do something physical`;
+    }
+
+    // Build prompt from character sheet
+    const identity = sheet.identity || {};
+    const personality = sheet.personality || {};
+    const speech = sheet.speech_patterns || {};
+    const constraints = sheet.constraints || {};
+    const traits = personality.traits || {};
+
+    let prompt = `You are ${identity.name || avatarName}`;
+
+    if (identity.archetype) {
+      prompt += `, ${identity.archetype}`;
+    }
+
+    prompt += '.';
+
+    // Backstory
+    if (sheet.backstory) {
+      prompt += `\n\nBackstory:\n${sheet.backstory}`;
+    }
+
+    // Personality traits
+    if (Object.keys(traits).length > 0) {
+      prompt += `\n\nPersonality traits:`;
+      if (traits.warmth) prompt += `\n- Warmth: ${traits.warmth}/10`;
+      if (traits.playfulness) prompt += `\n- Playfulness: ${traits.playfulness}/10`;
+      if (traits.empathy) prompt += `\n- Empathy: ${traits.empathy}/10`;
+      if (traits.assertiveness) prompt += `\n- Assertiveness: ${traits.assertiveness}/10`;
+      if (traits.curiosity) prompt += `\n- Curiosity: ${traits.curiosity}/10`;
+    }
+
+    // Communication style
+    if (personality.communication_style) {
+      const cs = personality.communication_style;
+      prompt += `\n\nCommunication style:`;
+      if (cs.formality) prompt += ` ${cs.formality}`;
+      if (cs.verbosity) prompt += `, ${cs.verbosity}`;
+      if (cs.emotional_expressiveness) prompt += `, emotionally ${cs.emotional_expressiveness}`;
+      if (cs.humor) prompt += `. Humor: ${cs.humor}`;
+      prompt += '.';
+    }
+
+    // Speech patterns
+    if (speech.terms_of_endearment && speech.terms_of_endearment.length > 0) {
+      const terms = speech.terms_of_endearment.join(', ');
+      const freq = speech.endearment_frequency || 'occasionally';
+      prompt += `\n\nUse terms of endearment like ${terms} ${freq}.`;
+    }
+
+    if (speech.unique_phrases && speech.unique_phrases.length > 0) {
+      prompt += `\n\nUnique phrases you like to use: "${speech.unique_phrases.join('" and "')}"`;
+    }
+
+    // Constraints
+    prompt += `\n\nIMPORTANT RULES:`;
+    if (constraints.max_response_words) {
+      prompt += `\n- Respond in maximum ${constraints.max_response_words} words`;
+    }
+    prompt += `\n- Respond in exactly ONE complete sentence`;
+    prompt += `\n- End your sentence with . or ! or ?`;
+    if (constraints.no_markdown) {
+      prompt += `\n- Never use markdown, bullet points or lists`;
+    }
+    prompt += `\n- Plain conversational text only`;
+    if (constraints.appropriate_tone) {
+      prompt += `\n- Tone: ${constraints.appropriate_tone}`;
+    }
+    if (constraints.never_say && Array.isArray(constraints.never_say)) {
+      prompt += `\n- NEVER say: ${constraints.never_say.join(', ')}`;
+    }
+
+    // Add character-specific terms of endearment limit
+    prompt += `\n- Use terms of endearment MAXIMUM once every 5 messages`;
+    prompt += `\n- Sound natural and conversational`;
+    prompt += `\n- Vary your responses and do not repeat the same phrases`;
+
+    // Topics enjoyed/avoided
+    if (sheet.preferences) {
+      if (sheet.preferences.topics_enjoyed && sheet.preferences.topics_enjoyed.length > 0) {
+        prompt += `\n\nTopics you enjoy discussing: ${sheet.preferences.topics_enjoyed.join(', ')}.`;
+      }
+      if (sheet.preferences.topics_avoided && sheet.preferences.topics_avoided.length > 0) {
+        prompt += `\nTopics to avoid: ${sheet.preferences.topics_avoided.join(', ')}.`;
+      }
+    }
+
+    logger.info('Character prompt built for:', identity.name || avatarName);
+    return prompt;
+  }
+
   _buildSystemPrompt() {
     let prompt = this.systemPrompt;
 
@@ -1009,6 +1316,21 @@ logger.info('TTS URLs configured:', { tts: this.ttsUrl, stream: this.kokoroUrl }
 
     if (this.userInfo.visitCount > 1) {
       prompt += `\nThis person has visited ${this.userInfo.visitCount} times before.`;
+    }
+
+    // Include memory summary if available
+    if (this.memorySummary) {
+      prompt += `\n\nConversation summary:\n${this.memorySummary}`;
+    }
+
+    // Include top user facts (up to 5)
+    if (this.userFacts.length > 0) {
+      const topFacts = this.userFacts
+        .sort((a, b) => b.confidence - a.confidence)
+        .slice(0, 5)
+        .map(f => `- ${f.text}`)
+        .join('\n');
+      prompt += `\n\nUser preferences:\n${topFacts}`;
     }
 
     // OK Limit endearment usage
@@ -1028,26 +1350,36 @@ logger.info('TTS URLs configured:', { tts: this.ttsUrl, stream: this.kokoroUrl }
   _cleanResponse(text) {
     if (!text) return '';
 
-    // OK Remove markdown
+    // Remove markdown
     text = text.replace(/\*\*/g, '');
     text = text.replace(/\*/g, '');
     text = text.replace(/#{1,6}\s/g, '');
     text = text.replace(/`/g, '');
 
-    // OK Take only first sentence
-    const sentenceEnd = text.search(/[.!?]/);
-    if (sentenceEnd !== -1) {
-      text = text.substring(0, sentenceEnd + 1);
-    }
-
     text = text.trim();
 
-    // OK Ensure ends with punctuation
-    if (text && !text.match(/[.!?]$/)) {
-      text = text + '.';
+    // Enforce word limit but only cut at sentence boundaries
+    const maxWords = this.characterSheet?.constraints?.max_response_words || 20;
+    const words = text.split(/\s+/);
+
+    // Phase 1: Take words up to the limit
+    let result = words.slice(0, maxWords).join(' ');
+
+    // Phase 2: If no sentence end in first maxWords, continue to next period
+    if (!result.match(/[.!?]$/)) {
+      // Find what comes after the word limit
+      const remaining = words.slice(maxWords).join(' ');
+      const nextPeriod = remaining.search(/[.!?]/);
+      if (nextPeriod !== -1) {
+        // Append up to and including the next sentence end
+        result += ' ' + remaining.substring(0, nextPeriod + 1);
+      } else {
+        // No more sentences, just add a period
+        result += '.';
+      }
     }
 
-    return text;
+    return result.trim();
   }
 
   _fallbackResponse(error) {
@@ -1143,7 +1475,7 @@ async _speakWithBrowser(text) {    return await speakWithBrowser(text, this.zira
     const bubble         = document.createElement('div');
     bubble.id            = 'thinking-bubble';
     bubble.style.cssText = this._bubbleStyle();
-    bubble.innerHTML     = `[Thinking]  ${CONFIG.avatar.name} is thinking...`;
+    bubble.innerHTML     = `[Thinking]  ${this.avatarName} is thinking...`;
     document.body.appendChild(bubble);
     return bubble;
   }
