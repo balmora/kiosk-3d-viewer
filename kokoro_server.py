@@ -4,6 +4,42 @@ Runs on http://localhost:8000
 Fast streaming TTS for Luna
 """
 
+import sys
+import subprocess
+
+# ==================================================
+#  AUTO INSTALL PACKAGES
+# ==================================================
+
+REQUIRED_PACKAGES = [
+    ('flask',       'flask'),
+    ('flask_cors',  'flask-cors'),
+    ('kokoro_onnx', 'kokoro-onnx'),
+    ('soundfile',   'soundfile'),
+    ('numpy',       'numpy'),
+    ('requests',    'requests'),
+]
+
+print("Checking required packages...")
+for import_name, pip_name in REQUIRED_PACKAGES:
+    try:
+        __import__(import_name)
+    except ImportError:
+        print(f"  [..] Installing {pip_name}...")
+        try:
+            subprocess.check_call(
+                [sys.executable, "-m", "pip", "install", pip_name],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            print(f"  [OK] {pip_name} installed")
+        except subprocess.CalledProcessError:
+            print(f"  [ERROR] Failed to install {pip_name}")
+            print(f"          Try manually: pip install {pip_name}")
+            sys.exit(1)
+
+print("All packages ready!\n")
+
 import os
 import io
 import re
@@ -27,7 +63,6 @@ print("=" * 40)
 try:
     from kokoro_onnx import Kokoro
 
-    # ✅ Paths to model files
     MODEL_PATH  = "./voice/kokoro-v1.0.onnx"
     VOICES_PATH = "./voice/voices-v1.0.bin"
 
@@ -39,11 +74,11 @@ try:
 
     kokoro = Kokoro(MODEL_PATH, VOICES_PATH)
 
-    print("✅ Kokoro model loaded!")
+    print("[OK] Kokoro model loaded!")
     MODEL_LOADED = True
 
 except Exception as e:
-    print(f"❌ Failed to load Kokoro: {e}")
+    print(f"[ERROR] Failed to load Kokoro: {e}")
     import traceback
     traceback.print_exc()
     MODEL_LOADED = False
@@ -55,7 +90,7 @@ except Exception as e:
 def clean_text(text):
     """Clean text before TTS"""
 
-    # ✅ Remove emojis
+    # Remove emojis
     emoji_pattern = re.compile(
         "["
         u"\U0001F600-\U0001F64F"
@@ -67,12 +102,12 @@ def clean_text(text):
     )
     text = emoji_pattern.sub('', text)
 
-    # ✅ Remove markdown
+    # Remove markdown
     text = re.sub(r'\*\*?(.*?)\*\*?', r'\1', text)
     text = re.sub(r'#{1,6}\s', '', text)
     text = re.sub(r'`', '', text)
 
-    # ✅ Fix special characters
+    # Fix special characters
     text = text.replace('&', 'and')
     text = text.replace('@', 'at')
     text = text.replace('#', '')
@@ -82,13 +117,13 @@ def clean_text(text):
     text = text.replace('\u201c', '')
     text = text.replace('\u201d', '')
 
-    # ✅ Clean whitespace
+    # Clean whitespace
     text = ' '.join(text.split()).strip()
 
     return text
 
 
-def text_to_wav(text, voice='af_jessica', speed=1.0): # af_sarah
+def text_to_wav(text, voice='af_sarah', speed=1.0):
     """Convert text to wav bytes using Kokoro"""
     samples, sample_rate = kokoro.create(
         text,
@@ -97,7 +132,7 @@ def text_to_wav(text, voice='af_jessica', speed=1.0): # af_sarah
         lang  = "en-us"
     )
 
-    # ✅ Convert to wav bytes
+    # Convert to wav bytes
     buffer = io.BytesIO()
     import soundfile as sf
     sf.write(buffer, samples, sample_rate, format='WAV')
@@ -115,8 +150,8 @@ def health():
         "status":       "ok" if MODEL_LOADED else "error",
         "model_loaded": MODEL_LOADED,
         "model":        "kokoro-onnx",
-        "model_file":   os.path.exists("./kokoro-v1.0.onnx"),
-        "voices_file":  os.path.exists("./voices-v1.0.bin"),
+        "model_file":   os.path.exists("./voice/kokoro-v1.0.onnx"),
+        "voices_file":  os.path.exists("./voice/voices-v1.0.bin"),
     })
 
 
@@ -129,7 +164,7 @@ def tts():
     try:
         data  = request.get_json()
         text  = data.get('text', '')
-        voice = data.get('voice', 'af_sarah')  # ✅ female voice
+        voice = data.get('voice', 'af_sarah')
         speed = data.get('speed', 1.0)
 
         if not text:
@@ -143,7 +178,7 @@ def tts():
 
         buffer, _ = text_to_wav(text, voice, speed)
 
-        print("✅ TTS generated")
+        print("[OK] TTS generated")
         return send_file(
             buffer,
             mimetype      = "audio/wav",
@@ -152,7 +187,7 @@ def tts():
         )
 
     except Exception as e:
-        print(f"❌ TTS error: {e}")
+        print(f"[ERROR] TTS error: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
@@ -178,7 +213,7 @@ def tts_stream():
 
         import requests as req
 
-        # ✅ Stream from Ollama
+        # Stream from Ollama
         response = req.post(
             ollama_url,
             json = {
@@ -195,6 +230,46 @@ def tts_stream():
 
         def generate():
             buffer_text = ""
+            sent_done = False
+
+            def find_sentence_end(text):
+                """Find end of first complete sentence"""
+                close_chars = {'"', "'", ")", "]", "}", "\u201c", "\u201d", "\u2018", "\u2019", "»", "›"}
+                for m in re.finditer(r"[.!?]", text):
+                    i = m.start() + 1  # after punctuation
+                    j = i
+                    while j < len(text) and text[j] in close_chars:
+                        j += 1
+                    if j >= len(text) or text[j].isspace():
+                        return j
+                return None
+
+            def has_meaningful_text(text):
+                return re.search(r"[A-Za-z0-9]", text or "") is not None
+
+            def make_chunk(sentence_text, final=False):
+                samples, sample_rate = kokoro.create(
+                    sentence_text,
+                    voice = voice,
+                    speed = speed,
+                    lang  = "en-us"
+                )
+
+                wav_buffer = io.BytesIO()
+                import soundfile as sf
+                sf.write(wav_buffer, samples, sample_rate, format='WAV')
+                wav_bytes = wav_buffer.getvalue()
+
+                header_obj = {
+                    "sentence": sentence_text,
+                    "audio_size": len(wav_bytes),
+                    "sample_rate": sample_rate,
+                }
+                if final:
+                    header_obj["final"] = True
+
+                header = json.dumps(header_obj) + '\n'
+                return header.encode(), wav_bytes
 
             for line in response.iter_lines():
                 if not line:
@@ -204,91 +279,54 @@ def tts_stream():
                     chunk = json.loads(line)
                     token = chunk.get('message', {}).get('content', '')
 
-                    if not token:
-                        continue
+                    # If we got a text token, append and try to emit sentence audio
+                    if token:
+                        buffer_text += token
 
-                    buffer_text += token
+                        # Check if we have a complete sentence
+                        end_pos = find_sentence_end(buffer_text)
+                        if end_pos is not None:
+                            # Extract complete sentence
+                            sentence = buffer_text[:end_pos].strip()
+                            buffer_text = buffer_text[end_pos:].strip()
 
-                    # ✅ Check if we have a complete sentence
-                    sentence_match = re.search(r'[.!?]', buffer_text)
+                            if len(sentence) < 1:
+                                continue
 
-                    if sentence_match:
-                        # Extract complete sentence
-                        end_pos  = sentence_match.start() + 1
-                        sentence = buffer_text[:end_pos].strip()
-                        buffer_text = buffer_text[end_pos:].strip()
+                            sentence = clean_text(sentence)
+                            if not sentence or not has_meaningful_text(sentence):
+                                continue
 
-                        if len(sentence) < 3:
-                            continue
+                            print(f"Streaming sentence: {sentence}")
 
-                        sentence = clean_text(sentence)
-                        if not sentence:
-                            continue
+                            try:
+                                header_bytes, wav_bytes = make_chunk(sentence)
+                                yield header_bytes
+                                yield wav_bytes
+                            except Exception as e:
+                                print(f"Sentence TTS error: {e}")
+                                continue
 
-                        print(f"Streaming sentence: {sentence}")
-
-                        try:
-                            # ✅ Generate audio for this sentence
-                            samples, sample_rate = kokoro.create(
-                                sentence,
-                                voice = voice,
-                                speed = speed,
-                                lang  = "en-us"
-                            )
-
-                            # ✅ Convert to wav bytes
-                            wav_buffer = io.BytesIO()
-                            import soundfile as sf
-                            sf.write(wav_buffer, samples, sample_rate, format='WAV')
-                            wav_bytes = wav_buffer.getvalue()
-
-                            # ✅ Send sentence text and audio size as header
-                            header = json.dumps({
-                                "sentence":    sentence,
-                                "audio_size":  len(wav_bytes),
-                                "sample_rate": sample_rate
-                            }) + '\n'
-
-                            yield header.encode()
-                            yield wav_bytes
-
-                        except Exception as e:
-                            print(f"Sentence TTS error: {e}")
-                            continue
-
-                    # ✅ Check if done
+                    # Check if done
                     if chunk.get('done', False):
                         # Process any remaining text
                         if buffer_text.strip():
                             remaining = clean_text(buffer_text.strip())
-                            if remaining and len(remaining) > 3:
+                            if remaining and has_meaningful_text(remaining):
                                 print(f"Final chunk: {remaining}")
                                 try:
-                                    samples, sample_rate = kokoro.create(
-                                        remaining,
-                                        voice = voice,
-                                        speed = speed,
-                                        lang  = "en-us"
+                                    header_bytes, wav_bytes = make_chunk(
+                                        remaining, final=True
                                     )
-                                    wav_buffer = io.BytesIO()
-                                    sf.write(wav_buffer, samples, sample_rate, format='WAV')
-                                    wav_bytes  = wav_buffer.getvalue()
-
-                                    header = json.dumps({
-                                        "sentence":    remaining,
-                                        "audio_size":  len(wav_bytes),
-                                        "sample_rate": sample_rate,
-                                        "final":       True
-                                    }) + '\n'
-
-                                    yield header.encode()
+                                    yield header_bytes
                                     yield wav_bytes
                                 except Exception as e:
                                     print(f"Final chunk TTS error: {e}")
 
-                        # ✅ Send done signal
+                        # Send done signal
                         done_signal = json.dumps({"done": True}) + '\n'
                         yield done_signal.encode()
+                        sent_done = True
                         break
 
                 except json.JSONDecodeError:
@@ -297,13 +335,31 @@ def tts_stream():
                     print(f"Stream error: {e}")
                     continue
 
+            # If Ollama ends without sending done=true, flush remaining text
+            if not sent_done:
+                if buffer_text.strip():
+                    remaining = clean_text(buffer_text.strip())
+                    if remaining and has_meaningful_text(remaining):
+                        print(f"Final chunk (end-of-stream): {remaining}")
+                        try:
+                            header_bytes, wav_bytes = make_chunk(
+                                remaining, final=True
+                            )
+                            yield header_bytes
+                            yield wav_bytes
+                        except Exception as e:
+                            print(f"Final chunk TTS error: {e}")
+
+                done_signal = json.dumps({"done": True}) + '\n'
+                yield done_signal.encode()
+
         return Response(
             stream_with_context(generate()),
             mimetype = 'application/octet-stream'
         )
 
     except Exception as e:
-        print(f"❌ Stream error: {e}")
+        print(f"[ERROR] Stream error: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
@@ -314,7 +370,7 @@ def list_voices():
     """List available Kokoro voices"""
     voices = {
         "female_american": [
-            "af_sarah",    # ✅ recommended for Luna
+            "af_sarah",
             "af_bella",
             "af_nicole",
             "af_sky",
@@ -349,7 +405,7 @@ def test():
 
         buffer, _ = text_to_wav(test_text, 'af_sarah', 1.0)
 
-        print("✅ Test generated")
+        print("[OK] Test generated")
         return send_file(
             buffer,
             mimetype      = "audio/wav",
@@ -358,7 +414,7 @@ def test():
         )
 
     except Exception as e:
-        print(f"❌ Test error: {e}")
+        print(f"[ERROR] Test error: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
@@ -372,9 +428,9 @@ if __name__ == '__main__':
     print("=" * 40)
     print(" Kokoro TTS Server")
     print("=" * 40)
-    print(f" Model file:   {'✅' if os.path.exists('./kokoro-v1.0.onnx') else '❌'}")
-    print(f" Voices file:  {'✅' if os.path.exists('./voices-v1.0.bin')  else '❌'}")
-    print(f" Model loaded: {'✅' if MODEL_LOADED else '❌'}")
+    print(f" Model file:   {'[OK]' if os.path.exists('./voice/kokoro-v1.0.onnx') else '[MISSING]'}")
+    print(f" Voices file:  {'[OK]' if os.path.exists('./voice/voices-v1.0.bin')  else '[MISSING]'}")
+    print(f" Model loaded: {'[OK]' if MODEL_LOADED else '[FAILED]'}")
     print("=" * 40)
     print(" Health:  http://localhost:8000/health")
     print(" Test:    http://localhost:8000/test")

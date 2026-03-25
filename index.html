@@ -2,8 +2,18 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Luna - AI Companion</title>
+  <title>AI Companion</title>
   <link rel="icon" href="data:,">
+
+  <!-- Import map for Three.js and addons -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./libs/three/build/three.module.js",
+      "three/addons/": "./libs/three/examples/jsm/"
+    }
+  }
+  </script>
   <style>
     body { margin: 0; overflow: hidden; background: #111; font-family: sans-serif; }
     canvas { display: block; touch-action: none; }
@@ -40,7 +50,7 @@
       width: 200px;
     }
 
-    /* ✅ Animation dropdown */
+    /*  ->  Animation dropdown */
     #animDropdown {
       display: none;
       position: fixed;
@@ -109,14 +119,49 @@
       background: rgba(255,105,180,0.3);
       border-radius: 3px;
     }
+
+    /* Mobile responsiveness */
+    @media (max-width: 600px) {
+      #ai-ui {
+        flex-wrap: wrap;
+        left: 0;
+        transform: none;
+        width: 100%;
+        bottom: 0;
+        padding: 8px;
+        gap: 6px;
+        justify-content: center;
+        box-sizing: border-box;
+      }
+      #ai-ui button {
+        min-height: 44px;
+        min-width: 44px;
+        font-size: 16px;
+        padding: 8px 12px;
+      }
+      #ai-ui input {
+        width: 100%;
+        order: -1;
+        margin-bottom: 6px;
+        box-sizing: border-box;
+      }
+      /* Dropdowns and panels fit mobile width */
+      #animDropdown, #historyPanel, #settingsPanel {
+        left: 50% !important;
+        transform: translateX(-50%) !important;
+        width: 90% !important;
+        max-width: 320px !important;
+      }
+    }
+
   </style>
 </head>
 <body>
   <canvas id="viewer"></canvas>
 
-  <!-- ✅ Removed #ui div - now inside dropdown -->
+  <!--  ->  Removed #ui div - now inside dropdown -->
   <div id="animDropdown">
-    <h4>🎭 Animations</h4>
+    <h4> Animations</h4>
     <div id="animList"></div>
   </div>
 
@@ -135,6 +180,6 @@
     }
   </script>
 
-  <script type="module" src="./js/main.js?v=4"></script>
+  <script type="module" src="./js/main.js?v=6"></script>
 </body>
 </html>

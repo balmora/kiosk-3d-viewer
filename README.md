@@ -25,7 +25,11 @@ https://git-scm.com/downloads
    cd kiosk-3d-viewer
    
 ### 2. Run setup
-Double-click **`setup.bat`**
+On Windows/Linux/macOS:
+```bash
+python setup.py
+```
+Or double-click `setup.py`
 
 This will automatically:
 - ✅ Download Three.js libraries
@@ -41,7 +45,7 @@ This will automatically:
 Drop your `.gltf` model file into the `/models` folder
 
 ### 4. Start the kiosk
-Double-click **`start.bat`**
+Double-click **`start.py`**
 
 ### 5. Open in browser
    http://localhost:8080
@@ -65,9 +69,9 @@ Type in the chat box to talk to Luna, or use these commands:
 ```bash
 kiosk-3d-viewer/
 ├── index.html
-├── setup.bat ← run this first
-├── start.bat ← run to launch
-├── push.bat ← git push helper
+├── setup.py ← run this first
+├── start.py ← run to launch
+├── push.py ← git push helper
 ├── kokoro_server.py ← TTS server
 ├── .gitignore
 ├── README.md
@@ -78,8 +82,8 @@ kiosk-3d-viewer/
 │ ├── lipSync.js
 │ ├── aiController.js
 │ └── sceneSetup.js
-├── libs/ ← created by setup.bat
-├── voices/ ← created by setup.bat
+├── libs/ ← created by setup.py
+├── voice/ ← created by setup.py
 └── models/ ← add your .gltf model here
 ```
 ---
@@ -89,8 +93,8 @@ kiosk-3d-viewer/
 | Problem | Fix |
 |---------|-----|
 | `Python not found` | Reinstall Node.js and check "Install Python" |
-| `Ollama not found after install` | Restart setup.bat after Ollama installer finishes |
+| `Ollama not found after install` | Restart setup.py after Ollama installer finishes |
 | `AI model pull failed` | Make sure Ollama is running, try `ollama serve` in terminal |
-| `Missing voice files` | Re-run setup.bat, it will skip already downloaded files |
+| `Missing voice files` | Re-run setup.py, it will skip already downloaded files |
 | `Model not showing` | Make sure your .gltf file is in the `/models` folder |
-| `No sound` | Check that kokoro_server.py is running (start.bat handles this) |
+| `No sound` | Check that kokoro_server.py is running (start.py handles this) |

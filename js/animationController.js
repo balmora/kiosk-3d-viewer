@@ -20,10 +20,10 @@ export class AnimationController {
     this.nextBlinkTime = this.randomBlinkInterval();
     this.morphTargets  = {};
 
-    // ✅ Loop constants
-    this.LOOP_ONCE   = 2200;
-    this.LOOP_REPEAT = 2201;
-    this.LOOP_PING   = 2202;
+    // Loop constants - using THREE.Loop*
+    this.LOOP_ONCE   = THREE.LoopOnce;
+    this.LOOP_REPEAT = THREE.LoopRepeat;
+    this.LOOP_PING   = THREE.LoopPingPong;
 
     this._registerClips();
     this._buildUI();
@@ -177,7 +177,7 @@ export class AnimationController {
   // ==================================================
 
   _buildUI() {
-    // ✅ Build into dropdown list instead of top bar
+    // OK Build into dropdown list instead of top bar
     const animList = document.getElementById('animList');
     if (!animList) {
       console.warn('animList element not found');
@@ -187,45 +187,45 @@ export class AnimationController {
     animList.innerHTML = '';
 
     const iconMap = {
-      wave:      '👋',
-      talk:      '🗣️',
-      nod:       '✅',
-      shake:     '❌',
-      bow:       '🙇',
-      dance:     '💃',
-      point:     '👉',
-      think:     '🤔',
-      celebrate: '🎉',
-      sad:       '😢',
-      idle:      '😐'
+      wave:      'wave',
+      talk:      'speak',
+      nod:       'OK',
+      shake:     'error',
+      bow:       'bow',
+      dance:     'dance',
+      point:     'point',
+      think:     'think',
+      celebrate: 'celebrate',
+      sad:       'sad',
+      idle:      'neutral'
     };
 
-    // ✅ Always add idle button first
-    this._addAnimButton(animList, '😐 Idle', () => {
+    // OK Always add idle button first
+    this._addAnimButton(animList, 'neutral Idle', () => {
       this.returnToIdle();
       this._closeDropdown();
     });
 
-    // ✅ Add button for each clip
+    // OK Add button for each clip
     Object.keys(this.actions).forEach((name) => {
       const icon = Object.entries(iconMap).find(
         ([k]) => name.includes(k)
       )?.[1] || '▶️';
 
       this._addAnimButton(animList, `${icon} ${name}`, () => {
-        // ✅ Use raw number not THREE.LoopOnce
+        // OK Use raw number not THREE.LoopOnce
         this.playAnimation(name, { loop: this.LOOP_ONCE });
         this._closeDropdown();
       });
     });
 
-    // ✅ Fallback buttons if no clips found
+    // OK Fallback buttons if no clips found
     if (Object.keys(this.actions).length === 0) {
-      this._addAnimButton(animList, '👋 Wave', () => {
+      this._addAnimButton(animList, 'wave Wave', () => {
         this._simulateWave();
         this._closeDropdown();
       });
-      this._addAnimButton(animList, '✅ Nod', () => {
+      this._addAnimButton(animList, 'OK Nod', () => {
         this._simulateNod();
         this._closeDropdown();
       });

@@ -42,3 +42,10 @@ voice/*.onnx
 *.ckpt
 __pycache__/
 *.pyc
+
+# --- Claude Code internal files ---
+# Do not commit planning/notes files
+TASKS.md
+prd.md
+# Exclude entire .claude folder (agent memory, logs)
+.claude/

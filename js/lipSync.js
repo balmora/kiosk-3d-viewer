@@ -6,6 +6,7 @@ export class LipSync {
     this.currentValue = 0;
     this.targetValue = 0;
     this.animFrame = null;
+    this.audioContext = null;
 
     // Mouth morph target keys to try (covers Ready Player Me, Mixamo, etc.)
     this.mouthKeys = [
@@ -40,7 +41,18 @@ export class LipSync {
 
   // Start lip sync with Web Audio API analysis
   startFromAudio(audioElement) {
+    // Close previous audio context if exists to prevent leaks
+    if (this.audioContext) {
+      try {
+        this.audioContext.close();
+      } catch (e) {
+        console.warn('Failed to close previous audio context:', e);
+      }
+    }
+
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    this.audioContext = ctx;
+
     const source = ctx.createMediaElementSource(audioElement);
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 256;
@@ -133,6 +145,17 @@ export class LipSync {
   stop() {
     this.isActive = false;
     if (this.animFrame) cancelAnimationFrame(this.animFrame);
+
+    // Close audio context to prevent leaks
+    if (this.audioContext) {
+      try {
+        this.audioContext.close();
+      } catch (e) {
+        console.warn('Failed to close audio context:', e);
+      }
+      this.audioContext = null;
+    }
+
     this._animateMouth(this.currentValue, 0, 150);
   }
 }

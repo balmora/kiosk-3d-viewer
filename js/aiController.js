@@ -1,5 +1,13 @@
 // aiController.js v6
-console.log('aiController.js v6 loaded');
+import { ChatMemory } from './ChatMemory.js?v=2';
+import * as THREE from 'three';
+import { cleanTextForTTS, speakWithKokoroRaw, speakWithBrowser } from './ttsCommon.js';
+import { fetchWithTimeout, fetchWithRetry } from './utils.js';
+import { CONFIG, getTtsUrls } from './config.js?v=2';
+import { SettingsUI } from './settingsUI.js';
+import { logger } from './logger.js';
+
+logger.info('aiController.js v6 loaded');
 
 export class AIController {
   constructor(animationController, lipSync) {
@@ -8,21 +16,29 @@ export class AIController {
     this.isSpeaking     = false;
     this.isProcessing   = false;
     this.messageQueue   = [];
-    this.ziraVoice      = null;
 
-    // ✅ Ollama settings
-    this.ollamaUrl   = 'http://localhost:11434/api/chat';
-    this.ollamaModel = 'leeplenty/ellaria';
+    // Initialize dependencies
+    this.chatMemory = new ChatMemory('luna_chat_history', CONFIG.ollama.maxHistory);
+    this.maxHistory = this.chatMemory.maxHistory;
 
-    // ✅ Kokoro TTS settings
-    this.kokoroUrl  = 'http://localhost:8000/tts/stream';
-    this.ttsUrl     = 'http://localhost:8000/tts';
-    this.useStream  = true;
-    this.ttsReady   = false;
-    this.ttsVoice   = 'af_sarah';
+    // State derived from chatMemory
+    this.chatHistory = this.chatMemory.chatHistory;
+    this.userInfo    = this.chatMemory.userInfo;
 
-    // ✅ Luna personality
-    this.systemPrompt = `You are Luna, a warm and affectionate AI companion.
+    // Configuration (from config.js)
+    const urls = getTtsUrls();
+    this.ollamaUrl   = CONFIG.ollama.url;
+    this.ollamaModel = CONFIG.ollama.model;
+    this.kokoroUrl   = urls.stream;
+    this.ttsUrl      = urls.tts;
+logger.info('TTS URLs configured:', { tts: this.ttsUrl, stream: this.kokoroUrl });
+    this.useStream   = CONFIG.tts.useStream;
+    this.ttsReady    = false;
+    this.ttsVoice    = CONFIG.tts.voice;
+    this.headBobIntensity = CONFIG.animation.headBobIntensity;
+
+    // ${CONFIG.avatar.name} personality prompt
+    this.systemPrompt = `You are ${CONFIG.avatar.name}, a warm and affectionate AI companion.
     You speak in a caring and friendly manner like a close girlfriend.
     You are genuinely interested in the user and remember details about them.
     You are supportive, empathetic and make the user feel comfortable.
@@ -38,54 +54,49 @@ export class AIController {
     - Vary your responses and do not repeat the same phrases
     - Focus on what the user said rather than adding filler words`;
 
-    // ✅ Loop constants
-    this.LOOP_ONCE   = 2200;
-    this.LOOP_REPEAT = 2201;
-    this.LOOP_PING   = 2202;
+    // Loop constants - using THREE.Loop*
+    this.LOOP_ONCE   = THREE.LoopOnce;
+    this.LOOP_REPEAT = THREE.LoopRepeat;
+    this.LOOP_PING   = THREE.LoopPingPong;
 
-    // ✅ Chat history
-    this.chatHistory = [];
-    this.maxHistory  = 10;
-    this.storageKey  = 'luna_chat_history';
-
-    // ✅ User info
-    this.userInfo = {
-      name:       null,
-      lastVisit:  null,
-      visitCount: 0,
-    };
-
-    // ✅ Intent map
+    // Intent mapping
     this.intentMap = {
-      wave:      { anim: 'wave',      emoji: '👋' },
-      hello:     { anim: 'wave',      emoji: '👋' },
-      hi:        { anim: 'wave',      emoji: '👋' },
-      greet:     { anim: 'wave',      emoji: '👋' },
-      nod:       { anim: 'nod',       emoji: '✅' },
-      yes:       { anim: 'nod',       emoji: '✅' },
-      agree:     { anim: 'nod',       emoji: '✅' },
-      no:        { anim: 'shake',     emoji: '❌' },
-      shake:     { anim: 'shake',     emoji: '❌' },
-      disagree:  { anim: 'shake',     emoji: '❌' },
-      dance:     { anim: 'dance',     emoji: '💃' },
-      celebrate: { anim: 'celebrate', emoji: '🎉' },
-      clap:      { anim: 'celebrate', emoji: '🎉' },
-      bow:       { anim: 'bow',       emoji: '🙇' },
-      think:     { anim: 'think',     emoji: '🤔' },
-      point:     { anim: 'point',     emoji: '👉' },
-      sad:       { anim: 'sad',       emoji: '😢' },
-      talk:      { anim: 'talk',      emoji: '🗣️' },
-      speak:     { anim: 'talk',      emoji: '🗣️' },
-      idle:      { anim: 'idle',      emoji: '😐' },
-      rest:      { anim: 'idle',      emoji: '😐' }
-    };
+    wave:      { anim: 'Waving',     emoji: 'wave' },
+    hello:     { anim: 'Waving',     emoji: 'wave' },
+    hi:        { anim: 'Waving',     emoji: 'wave' },
+    greet:     { anim: 'Waving',     emoji: 'wave' },
+    nod:       { anim: 'Idle',       emoji: 'OK' },
+    yes:       { anim: 'Happy',      emoji: 'OK' },
+    agree:     { anim: 'Happy',      emoji: 'OK' },
+    no:        { anim: 'Sad Idle',   emoji: 'error' },
+    shake:     { anim: 'Sad Idle',   emoji: 'error' },
+    disagree:  { anim: 'Sad Idle',   emoji: 'error' },
+    dance:     { anim: 'Jumping',    emoji: 'dance' },
+    celebrate: { anim: 'Happy',      emoji: 'celebrate' },
+    clap:      { anim: 'Happy',      emoji: 'celebrate' },
+    bow:       { anim: 'Idle',       emoji: 'bow' },
+    think:     { anim: 'Looking Behind', emoji: 'think' },
+    point:     { anim: 'Idle',       emoji: 'point' },
+    sad:       { anim: 'Sad Idle',   emoji: 'sad' },
+    talk:      { anim: 'Idle',      emoji: 'speak' },
+    speak:     { anim: 'Idle',      emoji: 'speak' },
+    idle:      { anim: 'Idle',      emoji: 'neutral' },
+    rest:      { anim: 'Idle',      emoji: 'neutral' }
+  };
+;
 
-    // ✅ Initialize
+    // Initialize
     this._preloadVoices();
     this._checkTTS();
     this._loadHistory();
     this._bindUI();
     this._waitForInteraction();
+
+    // Warm up Ollama in background (non-blocking)
+    this._warmupOllama().catch(err => {
+      logger.warn('Ollama warmup failed (will try on first request):', err.message);
+    });
+    this.settingsUI = new SettingsUI(this);
   }
 
   // ==================================================
@@ -100,7 +111,7 @@ export class AIController {
       const zira   = voices.find(v => v.name.includes('Zira'));
       if (zira) {
         this.ziraVoice = zira;
-        console.log('✅ Zira voice preloaded:', zira.name);
+        logger.info('OK Zira voice preloaded:', zira.name);
       }
     };
 
@@ -122,37 +133,72 @@ export class AIController {
   //  TTS CHECK
   // ==================================================
 
-  async _checkTTS() {
-    console.log('Checking TTS server...');
+    async _checkTTS() {
+    logger.info('Checking TTS server...');
     try {
-      const response = await fetch('http://localhost:8000/health');
-      const data     = await response.json();
-      console.log('TTS health:', data);
+      const response = await fetchWithTimeout('http://localhost:8000/health', {}, 3000);
+      const data = await response.json();
+      logger.info('TTS health:', data);
 
       if (data.status === 'ok') {
         this.ttsReady = true;
-        console.log('✅ TTS ready:', data.model);
+        logger.info('OK TTS ready:', data.model);
       } else {
         this.ttsReady = false;
-        console.warn('⚠️ TTS not ready');
+        logger.warn('⚠️ TTS not ready');
       }
     } catch (e) {
       this.ttsReady = false;
-      console.warn('⚠️ TTS not available - using browser TTS');
-      console.error('TTS error:', e.name, e.message);
+      logger.warn('⚠️ TTS not available - using browser TTS');
+      logger.error('TTS error:', e.name, e.message);
     }
   }
+
+  // ==================================================
+  //  OLLAMA WARMUP
+  // ==================================================
+
+  async _warmupOllama() {
+    logger.info('Warming up Ollama...');
+    try {
+      // Quick minimal request to load model into memory
+      const response = await fetchWithRetry(() =>
+        fetchWithTimeout(this.ollamaUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: this.ollamaModel,
+            messages: [{ role: 'user', content: 'hi' }],
+            stream: false,
+            options: {
+              temperature: 0.7,
+              num_predict: 5,  // Very short
+              stop: ['.', '!', '?']
+            }
+          })
+        }, 5000), 1); // 5s timeout, 1 retry
+
+      if (!response.ok) throw new Error(`Warmup failed: ${response.status}`);
+      const data = await response.json();
+      const reply = data.message?.content?.trim() || '';
+      logger.info('Ollama warmup complete, replied:', reply.substring(0, 30));
+    } catch (e) {
+      logger.warn('Ollama warmup failed:', e.message);
+      throw e; // re-throw so caller knows
+    }
+  }
+
 
   // ==================================================
   //  INTERACTION UNLOCK
   // ==================================================
 
   _waitForInteraction() {
-    console.log('Waiting for user interaction...');
+    logger.info('Waiting for user interaction...');
     const events = ['click', 'keydown', 'touchstart', 'mousedown'];
 
     const onInteraction = () => {
-      console.log('User interaction detected');
+      logger.info('User interaction detected');
       events.forEach(e => document.removeEventListener(e, onInteraction));
 
       const overlay = document.getElementById('startOverlay');
@@ -191,61 +237,19 @@ export class AIController {
   }
 
   // ==================================================
-  //  LOCAL STORAGE
+  //  LOCAL STORAGE (delegated to ChatMemory)
   // ==================================================
 
   _saveHistory() {
-    try {
-      const data = {
-        history:  this.chatHistory,
-        userInfo: this.userInfo,
-        savedAt:  new Date().toISOString()
-      };
-      localStorage.setItem(this.storageKey, JSON.stringify(data));
-      console.log('History saved:', this.chatHistory.length, 'messages');
-    } catch (e) {
-      console.error('Failed to save history:', e);
-    }
+    this.chatMemory.save();
   }
 
   _loadHistory() {
-    try {
-      const raw = localStorage.getItem(this.storageKey);
-      console.log('Loading history:', raw ? 'YES' : 'NO');
-
-      if (!raw) {
-        this.userInfo.visitCount = 0;
-        this.userInfo.lastVisit  = null;
-        return;
-      }
-
-      const data       = JSON.parse(raw);
-      this.chatHistory = (data.history || []).slice(-this.maxHistory);
-      this.userInfo    = {
-        name:       data.userInfo?.name       || null,
-        lastVisit:  data.userInfo?.lastVisit  || null,
-        visitCount: data.userInfo?.visitCount || 0,
-      };
-
-      this.userInfo.visitCount += 1;
-      this.userInfo.lastVisit   = data.savedAt;
-
-      console.log('History loaded:', this.chatHistory.length, 'messages');
-      console.log('User name:', this.userInfo.name);
-      console.log('Visit count:', this.userInfo.visitCount);
-
-    } catch (e) {
-      console.error('Failed to load history:', e);
-      this.chatHistory = [];
-    }
+    this.chatMemory.load();
   }
 
   _clearHistory() {
-    this.chatHistory         = [];
-    this.userInfo.name       = null;
-    this.userInfo.visitCount = 0;
-    localStorage.removeItem(this.storageKey);
-    console.log('History cleared');
+    this.chatMemory.clear();
     this._updateHistoryPanel();
   }
 
@@ -269,35 +273,43 @@ export class AIController {
     const aiUi = document.getElementById('ai-ui');
     if (!aiUi) return;
 
-    // ✅ Animations button
+    // OK Animations button
     const animBtn       = document.createElement('button');
     animBtn.id          = 'animBtn';
-    animBtn.textContent = '🎭';
+    animBtn.textContent = 'theater';
     animBtn.title       = 'Show animations';
     animBtn.addEventListener('click', () => this._toggleAnimDropdown());
     aiUi.appendChild(animBtn);
 
-    // ✅ History button
+    // OK History button
     const historyBtn       = document.createElement('button');
     historyBtn.id          = 'historyBtn';
-    historyBtn.textContent = '💬';
+    historyBtn.textContent = 'chat';
     historyBtn.title       = 'Show chat history';
     historyBtn.addEventListener('click', () => this._toggleHistoryPanel());
     aiUi.appendChild(historyBtn);
 
-    // ✅ Clear button
+    // OK Clear button
     const clearBtn       = document.createElement('button');
     clearBtn.id          = 'clearBtn';
-    clearBtn.textContent = '🗑️';
+    clearBtn.textContent = 'trash';
     clearBtn.title       = 'Clear chat history';
     clearBtn.addEventListener('click', () => {
-      if (confirm('Clear all chat history with Luna?')) {
+      if (confirm(`Clear all chat history with ${CONFIG.avatar.name}?`)) {
         this._clearHistory();
       }
     });
     aiUi.appendChild(clearBtn);
 
-    // ✅ History panel
+    // OK Settings button
+    const settingsBtn       = document.createElement('button');
+    settingsBtn.id          = 'settingsBtn';
+    settingsBtn.textContent = 'settings';
+    settingsBtn.title       = 'Settings';
+    settingsBtn.addEventListener('click', () => this.settingsUI.toggle());
+    aiUi.appendChild(settingsBtn);;
+
+    // OK History panel
     const panel         = document.createElement('div');
     panel.id            = 'historyPanel';
     panel.style.cssText = `
@@ -325,7 +337,7 @@ export class AIController {
       font-family: sans-serif;
       font-weight: bold;
     `;
-    header.textContent = '💕 Chat with Luna';
+    header.textContent = `heart Chat with ${CONFIG.avatar.name}`;
     panel.appendChild(header);
 
     const messages  = document.createElement('div');
@@ -335,7 +347,7 @@ export class AIController {
 
     this._updateHistoryPanel();
 
-    // ✅ Close panels when clicking outside
+    // OK Close panels when clicking outside
     document.addEventListener('click', (e) => {
       const animDropdown = document.getElementById('animDropdown');
       const historyPanel = document.getElementById('historyPanel');
@@ -395,7 +407,7 @@ export class AIController {
           font-size: 13px;
           font-family: sans-serif;
         ">
-          No messages yet, say hi to Luna! 💕
+          No messages yet, say hi to ${CONFIG.avatar.name}! heart
         </div>`;
       return;
     }
@@ -411,7 +423,7 @@ export class AIController {
       const isUser = msg.role === 'user';
       el.innerHTML = `
         <span style="color: ${isUser ? '#4488ff' : '#ff69b4'}">
-          ${isUser ? '👤 You' : '💕 Luna'}:
+          ${isUser ? 'person You' : 'heart ' + CONFIG.avatar.name}:
         </span>
         <span style="color: #ddd">
           ${msg.content}
@@ -443,7 +455,7 @@ export class AIController {
       font-family: sans-serif;
       z-index: 300;
     `;
-    el.textContent = `💬 ${count} message${count > 1 ? 's' : ''} queued`;
+    el.textContent = `chat ${count} message${count > 1 ? 's' : ''} queued`;
     document.body.appendChild(el);
   }
 
@@ -453,7 +465,7 @@ export class AIController {
     if (count === 0) {
       this._removeQueuedIndicator();
     } else {
-      el.textContent = `💬 ${count} message${count > 1 ? 's' : ''} queued`;
+      el.textContent = `chat ${count} message${count > 1 ? 's' : ''} queued`;
     }
   }
 
@@ -467,9 +479,9 @@ export class AIController {
   // ==================================================
 
   async _greetUser() {
-    console.log('Generating greeting...');
-    console.log('Visit count:', this.userInfo.visitCount);
-    console.log('User name:', this.userInfo.name);
+    logger.info('Generating greeting...');
+    logger.info('Visit count:', this.userInfo.visitCount);
+    logger.info('User name:', this.userInfo.name);
 
     const greetingPrompt = this._buildGreetingPrompt();
     const thinkBubble    = this._showThinkingBubble();
@@ -477,22 +489,22 @@ export class AIController {
 
     thinkBubble.remove();
 
-    console.log('Greeting:', greeting);
+    logger.info('Greeting:', greeting);
 
     this._saveHistory();
     this._executeGreeting(greeting);
   }
 
   _buildGreetingPrompt() {
-    // ✅ First visit
+    // OK First visit
     if (!this.userInfo.lastVisit || this.userInfo.visitCount <= 1) {
-      return `Generate a warm and friendly greeting as Luna meeting someone for the first time.
+      return `Generate a warm and friendly greeting as ${CONFIG.avatar.name} meeting someone for the first time.
       Ask for their name naturally.
       Maximum 1 sentence, maximum 20 words.
       Be sweet but not overly affectionate.`;
     }
 
-    // ✅ Build context
+    // OK Build context
     let context = '';
 
     if (this.userInfo.name) {
@@ -501,7 +513,7 @@ export class AIController {
 
     context += `They have visited ${this.userInfo.visitCount} times. `;
 
-    // ✅ Time since last visit
+    // OK Time since last visit
     if (this.userInfo.lastVisit) {
       const lastVisit = new Date(this.userInfo.lastVisit);
       const now       = new Date();
@@ -519,17 +531,17 @@ export class AIController {
       }
     }
 
-    // ✅ Last few messages
+    // OK Last few messages
     if (this.chatHistory.length > 0) {
       const recent = this.chatHistory.slice(-4);
       context     += `\nYour last conversation:\n`;
       recent.forEach(msg => {
-        const role  = msg.role === 'user' ? 'User' : 'Luna';
+        const role  = msg.role === 'user' ? 'User' : CONFIG.avatar.name;
         context    += `${role}: ${msg.content}\n`;
       });
     }
 
-    return `Generate a warm returning greeting as Luna for someone you know.
+    return `Generate a warm returning greeting as ${CONFIG.avatar.name} for someone you know.
     Context: ${context}
     Rules:
     - Maximum 1 sentence
@@ -540,48 +552,50 @@ export class AIController {
     - Sound natural and genuine`;
   }
 
-  async _askOllamaGreeting(prompt) {
-    console.log('Asking Ollama for greeting...');
+    async _askOllamaGreeting(prompt) {
+    logger.info('Asking Ollama for greeting...');
 
     try {
-      const response = await fetch(this.ollamaUrl, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
-          model:    this.ollamaModel,
-          messages: [
-            { role: 'system', content: this.systemPrompt },
-            { role: 'user',   content: prompt            }
-          ],
-          stream:  false,
-          options: {
-            temperature: 0.8,
-            num_predict: 50,
-            stop:        ['.', '!', '?']
-          }
-        })
-      });
+      const response = await fetchWithRetry(() =>
+        fetchWithTimeout(this.ollamaUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: this.ollamaModel,
+            messages: [
+              { role: 'system', content: this.systemPrompt },
+              { role: 'user', content: prompt }
+            ],
+            stream: false,
+            options: {
+              temperature: 0.8,
+              num_predict: 50,
+              stop: ['.', '!', '?']
+            }
+          })
+        }, 8000)
+      , 2);
 
       if (!response.ok) throw new Error(`Ollama error: ${response.status}`);
 
       const data = await response.json();
-      let text   = data.message?.content?.trim() || '';
+      let text = data.message?.content?.trim() || '';
 
-      console.log('Raw greeting:', text);
+      logger.info('Raw greeting:', text);
       text = this._cleanResponse(text);
-      console.log('Cleaned greeting:', text);
+      logger.info('Cleaned greeting:', text);
 
       return text || this._fallbackGreeting();
 
     } catch (error) {
-      console.error('Greeting error:', error.message);
+      logger.error('Greeting error:', error.message);
       return this._fallbackGreeting();
     }
   }
 
   _fallbackGreeting() {
     if (!this.userInfo.lastVisit || this.userInfo.visitCount <= 1) {
-      return "Hi there! I am Luna, so happy to meet you!";
+      return `Hi there! I am ${CONFIG.avatar.name}, so happy to meet you!`;
     }
     if (this.userInfo.name) {
       return `Welcome back ${this.userInfo.name}, I missed you!`;
@@ -593,7 +607,7 @@ export class AIController {
     if (this.isSpeaking || this.isProcessing) return;
     this.isSpeaking = true;
 
-    console.log('Speaking greeting:', responseText);
+    logger.info('Speaking greeting:', responseText);
 
     const bubble = this._showSpeechBubble(responseText);
 
@@ -602,7 +616,7 @@ export class AIController {
       returnToIdle: true
     });
 
-    this.animController.startHeadBob(0.8);
+    this.animController.startHeadBob(this.headBobIntensity);
 
     const duration = await this._speak(responseText);
     this.lipSync.startFromText(responseText, duration);
@@ -614,7 +628,7 @@ export class AIController {
     bubble.remove();
     this.isSpeaking = false;
 
-    // ✅ Process any queued messages
+    // OK Process any queued messages
     await this._processQueue();
   }
 
@@ -631,7 +645,7 @@ export class AIController {
 
   async processCommand(text) {
     this.messageQueue.push(text);
-    console.log('Queued:', text, '| Queue:', this.messageQueue.length);
+    logger.info('Queued:', text, '| Queue:', this.messageQueue.length);
 
     if (this.isSpeaking || this.isProcessing) {
       this._showQueuedIndicator(this.messageQueue.length);
@@ -647,7 +661,7 @@ export class AIController {
 
     while (this.messageQueue.length > 0) {
       const text = this.messageQueue.shift();
-      console.log('Processing:', text, '| Remaining:', this.messageQueue.length);
+      logger.info('Processing:', text, '| Remaining:', this.messageQueue.length);
       this._updateQueueIndicator(this.messageQueue.length);
       await this._handleMessage(text);
     }
@@ -677,163 +691,203 @@ export class AIController {
   //  STREAMING HANDLER
   // ==================================================
 
+
+  // ==================================================
+  //  STREAMING HELPERS
+  // ==================================================
+
+  async _processStreamReader(reader, intent, thinkBubble) {
+    let remainder = new Uint8Array(0);
+    const audioQueue = [];
+    let isPlaying = false;
+    let firstChunk = true;
+    let fullText = '';
+    let bubble = null;
+
+    const playNext = async () => {
+      if (isPlaying || audioQueue.length === 0) return;
+      isPlaying = true;
+
+      const { sentence, audioBytes } = audioQueue.shift();
+
+      if (bubble) bubble.textContent = fullText;
+
+      const blob = new Blob([audioBytes], { type: 'audio/wav' });
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+
+      await new Promise((resolve) => {
+        audio.onended = () => { URL.revokeObjectURL(url); resolve(); };
+        audio.onerror = () => { URL.revokeObjectURL(url); resolve(); };
+        audio.play();
+      });
+
+      isPlaying = false;
+      playNext();
+    };
+
+    // Read stream chunks
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const combined = new Uint8Array(remainder.length + value.length);
+      combined.set(remainder);
+      combined.set(value, remainder.length);
+
+      let offset = 0;
+
+      while (offset < combined.length) {
+        const newlineIdx = combined.indexOf(10, offset);
+        if (newlineIdx === -1) {
+          remainder = combined.slice(offset);
+          break;
+        }
+
+        const headerBytes = combined.slice(offset, newlineIdx);
+        const headerText = new TextDecoder().decode(headerBytes);
+
+        let header;
+        try {
+          header = JSON.parse(headerText);
+        } catch (e) {
+          offset = newlineIdx + 1;
+          continue;
+        }
+
+        if (header.done) {
+          logger.info('Stream complete');
+          offset = newlineIdx + 1;
+          break;
+        }
+
+        const audioStart = newlineIdx + 1;
+        const audioEnd = audioStart + header.audio_size;
+
+        if (audioEnd > combined.length) {
+          remainder = combined.slice(offset);
+          break;
+        }
+
+        const audioBytes = combined.slice(audioStart, audioEnd);
+        offset = audioEnd;
+        remainder = new Uint8Array(0);
+
+        // First chunk setup
+        if (firstChunk) {
+          thinkBubble.remove();
+          firstChunk = false;
+          fullText = header.sentence;
+          bubble = this._showSpeechBubble(fullText);
+
+          this.animController.playAnimation(intent.anim, {
+            loop: this.LOOP_ONCE,
+            returnToIdle: true
+          });
+          this.animController.startHeadBob(this.headBobIntensity);
+        } else {
+          fullText += ' ' + header.sentence;
+        }
+
+        logger.info('Received sentence:', header.sentence);
+        audioQueue.push({ sentence: header.sentence, audioBytes });
+        playNext();
+      }
+    }
+
+    // Wait for all audio to finish
+    await new Promise((resolve) => {
+      const check = setInterval(() => {
+        if (!isPlaying && audioQueue.length === 0) {
+          clearInterval(check);
+          resolve();
+        }
+      }, 100);
+    });
+
+    return { fullText, bubble };
+  }
+
+  async _waitForAudioDrain(audioQueue, isPlaying) {
+    await new Promise((resolve) => {
+      const check = setInterval(() => {
+        if (!isPlaying && audioQueue.length === 0) {
+          clearInterval(check);
+          resolve();
+        }
+      }, 100);
+    });
+  }
+
+
   async _handleMessageStreaming(intent, text) {
-    console.log('Using streaming mode');
+    logger.info('Using streaming mode');
+    this.isSpeaking = true;
+    const startTime = Date.now();
 
     const thinkBubble = this._showThinkingBubble();
-    let   firstChunk  = true;
-    let   bubble      = null;
-    let   fullText    = '';
-
-    const messages = [
-      { role: 'system', content: this._buildSystemPrompt() },
-      ...this.chatHistory.slice(-this.maxHistory)
-    ];
 
     try {
-      const response = await fetch(this.kokoroUrl, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
-          ollama_url: this.ollamaUrl,
-          messages:   messages,
-          model:      this.ollamaModel,
-          voice:      this.ttsVoice,
-          speed:      1.0,
-        })
-      });
+      const messages = [
+        { role: 'system', content: this._buildSystemPrompt() },
+        ...this.chatHistory.slice(-this.maxHistory)
+      ];
+
+      const response = await fetchWithRetry(
+        () => fetchWithTimeout(this.kokoroUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ollama_url: this.ollamaUrl,
+            messages: messages,
+            model: this.ollamaModel,
+            voice: this.ttsVoice,
+            speed: 1.0,
+          })
+        }, 10000),
+        2
+      );
 
       if (!response.ok) throw new Error(`Stream error: ${response.status}`);
 
-      const reader     = response.body.getReader();
-      let   remainder  = new Uint8Array(0);
-      const audioQueue = [];
-      let   isPlaying  = false;
-
-      // ✅ Audio player
-      const playNext = async () => {
-        if (isPlaying || audioQueue.length === 0) return;
-        isPlaying = true;
-
-        const { sentence, audioBytes } = audioQueue.shift();
-
-        if (bubble) bubble.textContent = fullText;
-
-        const blob  = new Blob([audioBytes], { type: 'audio/wav' });
-        const url   = URL.createObjectURL(blob);
-        const audio = new Audio(url);
-
-        await new Promise((resolve) => {
-          audio.onended = () => { URL.revokeObjectURL(url); resolve(); };
-          audio.onerror = () => { URL.revokeObjectURL(url); resolve(); };
-          audio.play();
-        });
-
-        isPlaying = false;
-        playNext();
-      };
-
-      // ✅ Read stream chunks
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const combined = new Uint8Array(remainder.length + value.length);
-        combined.set(remainder);
-        combined.set(value, remainder.length);
-
-        let offset = 0;
-
-        while (offset < combined.length) {
-          const newlineIdx = combined.indexOf(10, offset);
-          if (newlineIdx === -1) {
-            remainder = combined.slice(offset);
-            break;
-          }
-
-          const headerBytes = combined.slice(offset, newlineIdx);
-          const headerText  = new TextDecoder().decode(headerBytes);
-
-          let header;
-          try {
-            header = JSON.parse(headerText);
-          } catch (e) {
-            offset = newlineIdx + 1;
-            continue;
-          }
-
-          if (header.done) {
-            console.log('Stream complete');
-            offset = newlineIdx + 1;
-            break;
-          }
-
-          const audioStart = newlineIdx + 1;
-          const audioEnd   = audioStart + header.audio_size;
-
-          if (audioEnd > combined.length) {
-            remainder = combined.slice(offset);
-            break;
-          }
-
-          const audioBytes = combined.slice(audioStart, audioEnd);
-          offset           = audioEnd;
-          remainder        = new Uint8Array(0);
-
-          // ✅ First chunk setup
-          if (firstChunk) {
-            thinkBubble.remove();
-            firstChunk = false;
-            fullText   = header.sentence;
-            bubble     = this._showSpeechBubble(fullText);
-
-            this.animController.playAnimation(intent.anim, {
-              loop:         this.LOOP_ONCE,
-              returnToIdle: true
-            });
-            this.animController.startHeadBob(0.8);
-          } else {
-            fullText += ' ' + header.sentence;
-          }
-
-          console.log('Received sentence:', header.sentence);
-          audioQueue.push({ sentence: header.sentence, audioBytes });
-          playNext();
-        }
-      }
-
-      // ✅ Wait for all audio to finish
-      await new Promise((resolve) => {
-        const check = setInterval(() => {
-          if (!isPlaying && audioQueue.length === 0) {
-            clearInterval(check);
-            resolve();
-          }
-        }, 100);
-      });
+      const { fullText, bubble } = await this._processStreamReader(
+        response.body.getReader(),
+        intent,
+        thinkBubble
+      );
 
       if (fullText) {
         this._addToHistory('assistant', fullText);
       }
 
-    } catch (e) {
-      console.error('Streaming error:', e);
-      thinkBubble.remove();
-      await this._handleMessageStandard(intent, text);
-      return;
-    }
+      const totalTime = Date.now() - startTime;
+      logger.info(`Streaming complete in ${totalTime}ms`);
 
-    if (bubble) bubble.remove();
-    this.animController.stopHeadBob();
-    this.isSpeaking = false;
+      if (bubble) bubble.remove();
+      this.animController.stopHeadBob();
+      this.isSpeaking = false;
+
+    } catch (e) {
+      logger.error('Streaming error:', e);
+      thinkBubble.remove();
+      this.animController.stopHeadBob();
+      try {
+        await this._handleMessageStandard(intent, text);
+      } finally {
+        this.isSpeaking = false;
+      }
+    }
   }
+
+
+
 
   // ==================================================
   //  STANDARD HANDLER
   // ==================================================
 
   async _handleMessageStandard(intent, text) {
-    console.log('Using standard mode');
+    logger.info('Using standard mode');
 
     const thinkBubble = this._showThinkingBubble();
     const response    = await this._askOllama(text);
@@ -853,7 +907,7 @@ export class AIController {
     if (this.chatHistory.length > this.maxHistory * 2) {
       this.chatHistory = this.chatHistory.slice(-this.maxHistory);
     }
-    console.log('History length:', this.chatHistory.length);
+    logger.info('History length:', this.chatHistory.length);
   }
 
   _extractUserInfo(text) {
@@ -869,7 +923,7 @@ export class AIController {
       const match = text.match(pattern);
       if (match) {
         this.userInfo.name = match[1];
-        console.log('Learned name:', this.userInfo.name);
+        logger.info('Learned name:', this.userInfo.name);
         this._saveHistory();
         break;
       }
@@ -877,18 +931,32 @@ export class AIController {
   }
 
   _detectIntent(text) {
+    const lower = text.toLowerCase();
+    const negations = /(not|n't|never)/;
+
     for (const [keyword, data] of Object.entries(this.intentMap)) {
-      if (text.includes(keyword)) return { keyword, ...data };
+      const pattern = new RegExp(`\b${keyword}\b`, 'i');
+      const match = pattern.exec(lower);
+      if (match) {
+        // Check for preceding negation within 3 words
+        const beforeText = lower.substring(0, match.index).trim();
+        const beforeWords = beforeText.split(/s+/).slice(-3);
+        if (beforeWords.some(w => negations.test(w))) {
+          continue; // Skip this intent due to negation
+        }
+        return { keyword, ...data };
+      }
     }
-    return { keyword: 'talk', anim: 'talk', emoji: '🗣️' };
+    return { keyword: 'talk', anim: 'talk', emoji: 'speak' };
   }
 
   // ==================================================
   //  OLLAMA
   // ==================================================
 
-  async _askOllama(userText) {
-    console.log('Asking Ollama:', userText);
+    async _askOllama(userText) {
+    logger.info('Asking Ollama:', userText);
+    const startTime = Date.now();
 
     try {
       const messages = [
@@ -896,34 +964,38 @@ export class AIController {
         ...this.chatHistory.slice(-this.maxHistory)
       ];
 
-      const response = await fetch(this.ollamaUrl, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
-          model:    this.ollamaModel,
-          messages: messages,
-          stream:   false,
-          options: {
-            temperature: 0.7,
-            num_predict: 50,
-            stop:        ['.', '!', '?']
-          }
-        })
-      });
+      const response = await fetchWithRetry(() =>
+        fetchWithTimeout(this.ollamaUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: this.ollamaModel,
+            messages: messages,
+            stream: false,
+            options: {
+              temperature: 0.7,
+              num_predict: 40,  // Reduced from 50 for faster generation
+              stop: ['.', '!', '?']
+            }
+          })
+        }, 8000) // 8 second timeout
+      , 1); // Reduced from 2 retries for faster failure
 
       if (!response.ok) throw new Error(`Ollama error: ${response.status}`);
 
       const data = await response.json();
-      let text   = data.message?.content?.trim() || '';
+      let text = data.message?.content?.trim() || '';
 
-      console.log('Raw response:', text);
+      const OllamaTime = Date.now() - startTime;
+      logger.info(`Ollama responded in ${OllamaTime}ms`);
+
       text = this._cleanResponse(text);
-      console.log('Cleaned response:', text);
+      logger.info('Cleaned response:', text);
 
       return text || 'I am not sure how to respond to that.';
 
     } catch (error) {
-      console.error('Ollama error:', error.message);
+      logger.error('Ollama error:', error.message);
       return this._fallbackResponse(error);
     }
   }
@@ -939,7 +1011,7 @@ export class AIController {
       prompt += `\nThis person has visited ${this.userInfo.visitCount} times before.`;
     }
 
-    // ✅ Limit endearment usage
+    // OK Limit endearment usage
     const recentMessages  = this.chatHistory.slice(-5);
     const endearmentCount = recentMessages.filter(m =>
       m.role === 'assistant' &&
@@ -956,13 +1028,13 @@ export class AIController {
   _cleanResponse(text) {
     if (!text) return '';
 
-    // ✅ Remove markdown
+    // OK Remove markdown
     text = text.replace(/\*\*/g, '');
     text = text.replace(/\*/g, '');
     text = text.replace(/#{1,6}\s/g, '');
     text = text.replace(/`/g, '');
 
-    // ✅ Take only first sentence
+    // OK Take only first sentence
     const sentenceEnd = text.search(/[.!?]/);
     if (sentenceEnd !== -1) {
       text = text.substring(0, sentenceEnd + 1);
@@ -970,7 +1042,7 @@ export class AIController {
 
     text = text.trim();
 
-    // ✅ Ensure ends with punctuation
+    // OK Ensure ends with punctuation
     if (text && !text.match(/[.!?]$/)) {
       text = text + '.';
     }
@@ -999,7 +1071,7 @@ export class AIController {
       returnToIdle: true
     });
 
-    this.animController.startHeadBob(0.8);
+    this.animController.startHeadBob(this.headBobIntensity);
 
     const duration = await this._speak(responseText);
     this.lipSync.startFromText(responseText, duration);
@@ -1017,117 +1089,50 @@ export class AIController {
   // ==================================================
 
   async _speak(text) {
-    console.log('ttsReady:', this.ttsReady);
+    logger.info('ttsReady:', this.ttsReady);
 
     if (this.ttsReady) {
-      console.log('Using Kokoro TTS');
+      logger.info('Using Kokoro TTS');
       return this._speakWithKokoro(text);
     } else {
-      console.log('Using browser TTS');
+      logger.info('Using browser TTS');
       return this._speakWithBrowser(text);
     }
   }
 
-  async _speakWithKokoro(text) {
+async _speakWithKokoro(text) {
     try {
-      const cleanText = this._cleanTextForTTS(text);
-      console.log('Kokoro generating:', cleanText.substring(0, 50));
-
-      const start    = Date.now();
-      const response = await fetch(this.ttsUrl, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
-          text:  cleanText,
-          voice: this.ttsVoice,
-          speed: 1.0,
-        })
-      });
-
-      if (!response.ok) throw new Error(`Kokoro error: ${response.status}`);
-
-      const blob  = await response.blob();
-      const url   = URL.createObjectURL(blob);
-      const audio = new Audio(url);
-
-      return new Promise((resolve) => {
-        audio.onended = () => {
-          URL.revokeObjectURL(url);
-          console.log('Kokoro speech finished');
-          resolve(Date.now() - start);
-        };
-        audio.onerror = (e) => {
-          console.error('Kokoro audio error:', e);
-          URL.revokeObjectURL(url);
-          resolve(this._speakWithBrowser(text));
-        };
-        audio.play();
-      });
-
+      const cleanText = cleanTextForTTS(text);
+      logger.info("Kokoro generating:", cleanText.substring(0, 50));
+      logger.info("Using Kokoro voice:", this.ttsVoice);
+      const duration = await speakWithKokoroRaw(text, this.ttsVoice, this.ttsUrl);
+      return duration;
     } catch (e) {
-      console.error('Kokoro speak error:', e);
+      logger.error("Kokoro speak error:", e);
+      // If voice not found, fallback to default voice and retry once
+      if (e.message && e.message.includes('Voice') && e.message.includes('not found')) {
+        logger.warn('Voice', this.ttsVoice, 'not available, falling back to', CONFIG.tts.voice);
+        try {
+          const cleanText = cleanTextForTTS(text);
+          const duration = await speakWithKokoroRaw(text, CONFIG.tts.voice, this.ttsUrl);
+          // Update the voice setting to the working default
+          this.ttsVoice = CONFIG.tts.voice;
+          // Save to settings so we don't keep trying the invalid voice
+          if (this.settingsUI) {
+            this.settingsUI.settings.voice = CONFIG.tts.voice;
+            this.settingsUI.saveSettings();
+          }
+          return duration;
+        } catch (e2) {
+          logger.error('Fallback voice also failed:', e2);
+        }
+      }
       return this._speakWithBrowser(text);
     }
   }
 
-  _cleanTextForTTS(text) {
-    text = text.replace(/[\u{1F600}-\u{1F64F}]/gu, '');
-    text = text.replace(/[\u{1F300}-\u{1F5FF}]/gu, '');
-    text = text.replace(/[\u{1F680}-\u{1F9FF}]/gu, '');
-    text = text.replace(/[\u{2702}-\u{27B0}]/gu, '');
-    text = text.replace(/\*\*/g, '');
-    text = text.replace(/\*/g, '');
-    text = text.replace(/`/g, '');
-    text = text.replace(/\.\.\./g, '.');
-    text = text.replace(/&/g, 'and');
-    text = text.replace(/#/g, '');
-    text = text.trim();
-    text = text.replace(/\s+/g, ' ');
-    return text;
-  }
 
-  _speakWithBrowser(text) {
-    return new Promise((resolve) => {
-      if (!window.speechSynthesis) {
-        resolve(text.length * 60);
-        return;
-      }
-
-      speechSynthesis.cancel();
-
-      const utter   = new SpeechSynthesisUtterance(text);
-      utter.rate    = 0.90;
-      utter.pitch   = 1.1;
-      utter.volume  = 1;
-
-      if (this.ziraVoice) {
-        utter.voice = this.ziraVoice;
-      } else {
-        const voices = speechSynthesis.getVoices();
-        const zira   = voices.find(v => v.name.includes('Zira'));
-        if (zira) {
-          utter.voice    = zira;
-          this.ziraVoice = zira;
-        }
-      }
-
-      const start    = Date.now();
-      utter.onstart  = () => console.log('Browser TTS speaking...');
-      utter.onend    = () => resolve(Date.now() - start);
-      utter.onerror  = (e) => {
-        if (e.error === 'not-allowed') {
-          console.warn('Speech not allowed');
-        } else if (e.error === 'interrupted') {
-          console.warn('Speech interrupted');
-        } else {
-          console.error('Speech error:', e.error);
-        }
-        resolve(text.length * 80);
-      };
-
-      speechSynthesis.speak(utter);
-    });
-  }
+async _speakWithBrowser(text) {    return await speakWithBrowser(text, this.ziraVoice);  }
 
   // ==================================================
   //  BUBBLES
@@ -1138,7 +1143,7 @@ export class AIController {
     const bubble         = document.createElement('div');
     bubble.id            = 'thinking-bubble';
     bubble.style.cssText = this._bubbleStyle();
-    bubble.innerHTML     = '💭 Luna is thinking...';
+    bubble.innerHTML     = `[Thinking]  ${CONFIG.avatar.name} is thinking...`;
     document.body.appendChild(bubble);
     return bubble;
   }

@@ -18,13 +18,13 @@ export async function loadModel(scene, modelPath = './models/avatar.gltf') {
         loadingEl.remove();
         const model = gltf.scene;
 
-        // ✅ Get raw size first before any scaling
+        // OK Get raw size first before any scaling
         const box = new THREE.Box3().setFromObject(model);
         const size = box.getSize(new THREE.Vector3());
 
         console.log('Raw model size:', size);
 
-        // ✅ Auto detect unit scale
+        // OK Auto detect unit scale
         // If model height is > 3 it is likely in cm, scale to meters
         const targetHeight = 1.75; // average human height in meters
         const currentHeight = size.y;
@@ -34,13 +34,13 @@ export async function loadModel(scene, modelPath = './models/avatar.gltf') {
 
         model.scale.setScalar(scaleFactor);
 
-        // ✅ Recalculate box after scaling
+        // OK Recalculate box after scaling
         const scaledBox = new THREE.Box3().setFromObject(model);
         const scaledSize = scaledBox.getSize(new THREE.Vector3());
 
         console.log('Scaled model size:', scaledSize);
 
-        // ✅ Place feet at y=0
+        // OK Place feet at y=0
         model.position.y = -scaledBox.min.y;
 
         console.log('Feet position (min.y):', scaledBox.min.y);
@@ -51,7 +51,19 @@ export async function loadModel(scene, modelPath = './models/avatar.gltf') {
             child.castShadow = true;
             child.receiveShadow = true;
             if (child.material) {
+              // Ensure material is visible
+              if (!child.material.color) {
+                child.material.color = new THREE.Color(0xffccaa); // skin tone
+              }
               child.material.envMapIntensity = 0.8;
+              child.material.needsUpdate = true;
+            } else {
+              // Add a basic material if missing
+              child.material = new THREE.MeshStandardMaterial({
+                color: 0xffccaa,
+                roughness: 0.5,
+                metalness: 0.0
+              });
             }
           }
         });
@@ -154,7 +166,8 @@ function createPlaceholder(scene) {
     mixer: new THREE.AnimationMixer(group),
     clips: [],
     morphTargets: {},
-    bones: { jaw }
+    bones: { jaw },
+    isPlaceholder: true // indicates fallback model was used
   };
 }
 

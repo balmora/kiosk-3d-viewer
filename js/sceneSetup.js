@@ -6,13 +6,13 @@ export function createScene(canvas) {
   scene.fog = new THREE.Fog(0x111111, 20, 80);
 
   const camera = new THREE.PerspectiveCamera(
-    50,                                    // ✅ wider FOV to see more
+    50,                                    // OK wider FOV to see more
     window.innerWidth / window.innerHeight,
-    0.01,                                  // ✅ smaller near plane
-    1000                                   // ✅ larger far plane
+    0.01,                                  // OK smaller near plane
+    1000                                   // OK larger far plane
   );
 
-  // ✅ Default position, will be overridden by fitCameraToModel
+  // OK Default position, will be overridden by fitCameraToModel
   camera.position.set(0, 1.0, 5);
   camera.lookAt(0, 1.0, 0);
 
