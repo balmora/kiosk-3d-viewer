@@ -303,4 +303,57 @@ All data is stored locally in the browser's localStorage. No data is sent to ext
 
 ---
 
+## Morph Target Expression System (Planned)
+
+The system will use **morph targets** (blend shapes) to create real-time facial expressions and emotional states that blend seamlessly with lip-sync.
+
+### What Are Morph Targets?
+
+Morph targets are vertex deformations stored in the 3D model that can be animated in real-time (0-1 values). Unlike skeletal animations, morph targets offer:
+- Smooth linear interpolation between states
+- Perfect lip-sync integration
+- Infinite expression combinations
+- Lightweight memory footprint
+
+### Expression Categories
+
+| Category | Examples | Triggered By |
+|----------|----------|--------------|
+| **Emotional** | Happy, sad, surprised, angry | AI response sentiment |
+| **Physical** | Yawn, blink, breathe | Keywords or idle state |
+| **Conversational** | Thinking, listening, nodding | Conversation context |
+| **Emphasis** | Excited gesture, shrug | Response intensity |
+
+### Implementation Phases
+
+1. **Discovery**: Detect available morph targets from loaded model
+2. **Infrastructure**: Create MorphTargetController class with expression presets
+3. **Lip-Sync**: Enhance phoneme coverage for smoother speech
+4. **Emotions**: Keyword detection + sentiment analysis for expressions
+5. **Idle Motion**: Subtle breathing and blink animations
+6. **Context**: AI response analysis for appropriate expressions
+
+### Blender Integration
+
+To add morph targets for your character:
+
+1. **Open your model in Blender**
+2. **Select the mesh** → Properties panel → Object Data (green triangle)
+3. **Add Shape Keys** for each expression you want:
+   - `smile`, `frown`, `brow_raise`, `brow_frown`
+   - `mouth_A`, `mouth_E`, `mouth_I`, `mouth_O`, `mouth_U` (for lip-sync)
+   - `blink_left`, `blink_right`
+   - `breath_in`, `breath_out`
+4. **Animate the values** (0-1) to test in Blender
+5. **Export as GLTF** with morph targets enabled
+
+### Priority
+
+1. Lip-sync improvement (mouth shapes)
+2. Emotional expressions (smile, sad, etc.)
+3. Breathing and idle motion
+4. Context-aware animation selection
+
+---
+
 ## Project Structure
