@@ -91,6 +91,21 @@ async function init() {
   const lipSync = new LipSync(morphTargets, bones);
   const aiController = new AIController(animController, lipSync, characterSheet);
 
+  // Load character facts from character sheet
+  if (characterSheet?.facts && characterSheet.facts.length > 0) {
+    const characterName = characterSheet.identity?.name || 'unknown';
+    for (const fact of characterSheet.facts) {
+      aiController.chatMemory.addCharacterFact({
+        text: fact.text || fact,
+        category: fact.category || 'biographical',
+        confidence: fact.confidence || 0.8,
+        scope: 'character',
+        privacy: fact.privacy || 'public'
+      });
+    }
+    console.log(`Loaded ${characterSheet.facts.length} character facts for ${characterName}`);
+  }
+
   // Update page title and input placeholder with character name
   const avatarName = characterSheet?.identity?.name || CONFIG.avatar.name;
   document.title = avatarName;

@@ -95,7 +95,8 @@ export const CONFIG = {
     factExtractionDebounceMs: 30000,
     summaryInterval: 20,
     maxMessagesWithSummary: 5,
-    summarizationDebounceMs: 60000
+    summarizationDebounceMs: 60000,
+    defaultPrivacy: 'private'  // 'private', 'shared', or 'public'
   }
 };
 

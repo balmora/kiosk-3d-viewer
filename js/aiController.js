@@ -24,12 +24,14 @@ export class AIController {
     // Initialize dependencies
     this.chatMemory = new ChatMemory('luna_chat_history', CONFIG.ollama.maxHistory);
     this.chatMemory.setAI(this); // Enable ChatMemory to call back for Ollama (fact extraction/summarization)
+    this.chatMemory.setCharacterName(this.avatarName); // Set character name for multi-scope memory
     this.maxHistory = this.chatMemory.maxHistory;
 
     // State derived from chatMemory
     this.chatHistory = this.chatMemory.chatHistory;
     this.userInfo    = this.chatMemory.userInfo;
     this.userFacts   = this.chatMemory.userFacts || [];
+    this.characterFacts = this.chatMemory.characterFacts || [];
     this.memorySummary = this.chatMemory.memorySummary || '';
 
     // Configuration (from config.js)
@@ -379,6 +381,7 @@ Important: Output ONLY the JSON object, no other text.`;
     this.chatHistory   = this.chatMemory.chatHistory;
     this.userInfo      = this.chatMemory.userInfo;
     this.userFacts     = this.chatMemory.userFacts || [];
+    this.characterFacts = this.chatMemory.characterFacts || [];
     this.memorySummary = this.chatMemory.memorySummary || '';
   }
 
@@ -554,12 +557,14 @@ Important: Output ONLY the JSON object, no other text.`;
       const activeProfile = this.chatMemory.getActiveProfile() || 'default';
       const profileName = this.userInfo.name || activeProfile;
       const visits = this.userInfo.visitCount || 0;
-      const factsCount = this.userFacts.length;
+      const userFactsCount = this.userFacts.length;
+      const charFactsCount = this.characterFacts.length;
       const summaryPreview = this.memorySummary ? ' • Summary active' : '';
 
       profileInfo.innerHTML = `
         <strong>${profileName}</strong> • ${visits} visits
-        ${factsCount > 0 ? `• ${factsCount} facts` : ''}
+        ${userFactsCount > 0 ? `• ${userFactsCount} user facts` : ''}
+        ${charFactsCount > 0 ? `• ${charFactsCount} character facts` : ''}
         ${summaryPreview}
       `;
     }
@@ -1323,6 +1328,12 @@ IMPORTANT RULES:
       prompt += `\n\nConversation summary:\n${this.memorySummary}`;
     }
 
+    // Include top character facts (about this AI)
+    const characterFactsStr = this.chatMemory.getCharacterFactsForPrompt();
+    if (characterFactsStr) {
+      prompt += `\n\nAbout you:\n${characterFactsStr}`;
+    }
+
     // Include top user facts (up to 5)
     if (this.userFacts.length > 0) {
       const topFacts = this.userFacts
@@ -1333,7 +1344,7 @@ IMPORTANT RULES:
       prompt += `\n\nUser preferences:\n${topFacts}`;
     }
 
-    // OK Limit endearment usage
+    // Limit endearment usage
     const recentMessages  = this.chatHistory.slice(-5);
     const endearmentCount = recentMessages.filter(m =>
       m.role === 'assistant' &&

@@ -7,12 +7,14 @@ import { CONFIG } from './config.js?v=2';
  * - Current: localStorage (simple, sync, 5MB limit)
  * - Future: IndexedDB via adapter pattern
  * 
- * To upgrade to IndexedDB:
- * 1. Create IStorageAdapter interface
- * 2. Implement LocalStorageAdapter (current behavior)
- * 3. Implement IndexedDBAdapter (future)
- * 4. Add migration from localStorage to IndexedDB
- * 5. Update constructor to accept adapter instance
+ * Memory Scopes:
+ * - 'user': Facts about the user (private by default)
+ * - 'character': Facts about the AI persona (public by default)
+ * 
+ * Privacy Levels:
+ * - 'private': Only visible within this profile
+ * - 'shared': Visible to all users, attributed to source
+ * - 'public': No attribution, visible to all
  */
 
 export class ChatMemory {
@@ -21,8 +23,9 @@ export class ChatMemory {
     this.maxHistory = maxHistory;
     this.profiles = {};
     this.activeProfileKey = null;
-    this._activeProfile = null; // cached reference to active profile data
-    this._aiController = null; // Reference to AIController for Ollama calls
+    this._activeProfile = null;
+    this._aiController = null;
+    this._characterName = null;
 
     // Per-profile state (will be populated from _activeProfile)
     this.chatHistory = [];
@@ -31,12 +34,17 @@ export class ChatMemory {
       lastVisit: null,
       visitCount: 0,
     };
-    this.userFacts = []; // extracted structured facts
-    this.memorySummary = ''; // conversation summary
+    this.userFacts = [];    // Facts about the user (scope: user)
+    this.characterFacts = []; // Facts about the character (scope: character)
+    this.memorySummary = '';
   }
 
   setAI(aiController) {
     this._aiController = aiController;
+  }
+
+  setCharacterName(name) {
+    this._characterName = name ? name.toLowerCase() : null;
   }
 
   _getRawData() {
@@ -81,19 +89,23 @@ export class ChatMemory {
   }
 
   _ensureDefaultProfile() {
-    // Use the profiles map already loaded in this.profiles
     if (!this.profiles) {
       this.profiles = {};
     }
     if (!this.profiles.default) {
-      this.profiles.default = {
-        chatHistory: [],
-        userInfo: { name: null, lastVisit: null, visitCount: 0 },
-        messageCount: 0,
-        memorySummary: '',
-        userFacts: []
-      };
+      this.profiles.default = this._createEmptyProfile();
     }
+  }
+
+  _createEmptyProfile() {
+    return {
+      chatHistory: [],
+      userInfo: { name: null, lastVisit: null, visitCount: 0 },
+      messageCount: 0,
+      memorySummary: '',
+      userFacts: [],
+      characterFacts: []  // Facts about the character (scope: character)
+    };
   }
 
   _loadActiveProfileState() {
@@ -102,19 +114,14 @@ export class ChatMemory {
     }
     if (!this.profiles[this.activeProfileKey]) {
       console.warn(`Profile "${this.activeProfileKey}" not found, creating it`);
-      this.profiles[this.activeProfileKey] = {
-        chatHistory: [],
-        userInfo: { name: null, lastVisit: null, visitCount: 0 },
-        messageCount: 0,
-        memorySummary: '',
-        userFacts: []
-      };
+      this.profiles[this.activeProfileKey] = this._createEmptyProfile();
     }
 
     this._activeProfile = this.profiles[this.activeProfileKey];
     this.chatHistory = this._activeProfile.chatHistory || [];
     this.userInfo = this._activeProfile.userInfo || { name: null, lastVisit: null, visitCount: 0 };
     this.userFacts = this._activeProfile.userFacts || [];
+    this.characterFacts = this._activeProfile.characterFacts || [];
     this.memorySummary = this._activeProfile.memorySummary || '';
   }
 
@@ -125,10 +132,10 @@ export class ChatMemory {
     this._activeProfile.chatHistory = this.chatHistory;
     this._activeProfile.userInfo = this.userInfo;
     this._activeProfile.userFacts = this.userFacts;
+    this._activeProfile.characterFacts = this.characterFacts;
     this._activeProfile.memorySummary = this.memorySummary;
 
     const allData = this._getAllData();
-    // Ensure profiles object exists
     if (!allData.profiles) allData.profiles = {};
     allData.profiles[this.activeProfileKey] = this._activeProfile;
     allData.activeProfile = this.activeProfileKey;
@@ -251,18 +258,10 @@ export class ChatMemory {
 
   clear() {
     if (this.activeProfileKey && this.profiles[this.activeProfileKey]) {
-      // Clear just this profile
-      this.profiles[this.activeProfileKey] = {
-        chatHistory: [],
-        userInfo: { name: null, lastVisit: null, visitCount: 0 },
-        messageCount: 0,
-        memorySummary: '',
-        userFacts: []
-      };
+      this.profiles[this.activeProfileKey] = this._createEmptyProfile();
       this._loadActiveProfileState();
       this._saveAllData(this.profiles);
     } else {
-      // Fallback: clear entire storage
       localStorage.removeItem(this.storageKey);
     }
     console.log('Profile cleared:', this.activeProfileKey);
@@ -307,9 +306,9 @@ export class ChatMemory {
       },
       messageCount: 0,
       memorySummary: '',
-      userFacts: []
+      userFacts: [],
+      characterFacts: []
     };
-    // Save full data structure (not just profiles)
     const allData = this._getAllData();
     allData.profiles[normalized] = this.profiles[normalized];
     this._saveAllData(allData);
@@ -321,18 +320,12 @@ export class ChatMemory {
     const normalized = this._normalizeProfileKey(key);
     if (!this.profiles[normalized]) {
       console.warn(`Profile "${normalized}" not found, creating it automatically`);
-      this.profiles[normalized] = {
-        chatHistory: [],
-        userInfo: { name: null, lastVisit: null, visitCount: 0 },
-        messageCount: 0,
-        memorySummary: '',
-        userFacts: []
-      };
+      this.profiles[normalized] = this._createEmptyProfile();
     }
 
     this.activeProfileKey = normalized;
     this._loadActiveProfileState();
-    this._saveActiveProfile(); // Save active profile pointer
+    this._saveActiveProfile();
     console.log(`Switched to profile: ${normalized}`);
     return true;
   }
@@ -355,38 +348,50 @@ export class ChatMemory {
 
   // ============ Fact Extraction ============
 
-  mergeFact(newFact) {
+  mergeFact(newFact, options = {}) {
     if (!this._activeProfile || !newFact || !newFact.text) return;
 
-    const existingIndex = this._activeProfile.userFacts.findIndex(
-      f => f.text.toLowerCase() === newFact.text.toLowerCase()
+    // Determine scope and target
+    const scope = newFact.scope || 'user';
+    const targetCharacter = newFact.targetCharacter || this._characterName;
+    const defaultPrivacy = CONFIG?.memory?.defaultPrivacy || 'private';
+    const privacy = newFact.privacy || (scope === 'user' ? defaultPrivacy : 'public');
+
+    // Create fact with all required fields
+    const enrichedFact = {
+      ...newFact,
+      scope,
+      privacy,
+      targetCharacter,
+      id: newFact.id || Date.now().toString(),
+      createdAt: newFact.createdAt || new Date().toISOString(),
+      lastUpdated: new Date().toISOString()
+    };
+
+    // Determine which array to use based on scope
+    const factsArray = scope === 'user' ? 'userFacts' : 'characterFacts';
+    const facts = this._activeProfile[factsArray] || [];
+
+    const existingIndex = facts.findIndex(
+      f => f.text.toLowerCase() === enrichedFact.text.toLowerCase()
     );
 
     if (existingIndex >= 0) {
-      // Update existing fact with higher confidence or newer timestamp
-      const existing = this._activeProfile.userFacts[existingIndex];
-      if (newFact.confidence > existing.confidence) {
-        this._activeProfile.userFacts[existingIndex] = {
-          ...newFact,
-          lastUpdated: new Date().toISOString()
-        };
+      const existing = facts[existingIndex];
+      if (enrichedFact.confidence > existing.confidence) {
+        facts[existingIndex] = enrichedFact;
       }
     } else {
-      // Add new fact
-      this._activeProfile.userFacts.push({
-        ...newFact,
-        id: Date.now().toString(),
-        createdAt: new Date().toISOString(),
-        lastUpdated: new Date().toISOString()
-      });
+      facts.push(enrichedFact);
     }
 
     // Enforce maxFacts limit
     const maxFacts = CONFIG?.memory?.maxFacts || 10;
-    if (this._activeProfile.userFacts.length > maxFacts) {
-      // Remove lowest confidence facts
-      this._activeProfile.userFacts.sort((a, b) => a.confidence - b.confidence);
-      this._activeProfile.userFacts = this._activeProfile.userFacts.slice(-maxFacts);
+    if (facts.length > maxFacts) {
+      facts.sort((a, b) => a.confidence - b.confidence);
+      this._activeProfile[factsArray] = facts.slice(-maxFacts);
+    } else {
+      this._activeProfile[factsArray] = facts;
     }
   }
 
@@ -398,11 +403,12 @@ export class ChatMemory {
     try {
       const facts = await this._aiController._extractFactsFromText(userText);
       for (const fact of facts) {
-        this.mergeFact(fact);
+        // User facts are private by default
+        this.mergeFact(fact, { scope: 'user', privacy: 'private' });
       }
       if (facts.length > 0) {
         this._saveActiveProfile();
-        logger.debug('Extracted', facts.length, 'new facts');
+        logger.debug('Extracted', facts.length, 'user facts');
       }
     } catch (e) {
       logger.warn('Fact extraction skipped:', e.message);
@@ -410,12 +416,36 @@ export class ChatMemory {
     return Promise.resolve();
   }
 
+  // ============ Character Facts ============
+
+  addCharacterFact(fact) {
+    this.mergeFact(fact, { scope: 'character', privacy: 'public' });
+    this._saveActiveProfile();
+  }
+
+  getCharacterFacts() {
+    return this.characterFacts || [];
+  }
+
+  getCharacterFactsForPrompt() {
+    const facts = this.getCharacterFacts();
+    if (facts.length === 0) return '';
+    
+    const topFacts = facts
+      .filter(f => f.privacy === 'public' || f.privacy === 'shared')
+      .sort((a, b) => b.confidence - a.confidence)
+      .slice(0, 5);
+    
+    if (topFacts.length === 0) return '';
+    
+    return topFacts.map(f => `- ${f.text}`).join('\n');
+  }
+
   // ============ Migration ============
 
   _migrateLegacyData(oldData) {
     const profiles = {};
 
-    // Convert old {history, userInfo} to profile "default"
     const legacyProfile = {
       chatHistory: (oldData.history || []).slice(-this.maxHistory),
       userInfo: {
@@ -425,13 +455,11 @@ export class ChatMemory {
       },
       messageCount: oldData.history ? oldData.history.length : 0,
       memorySummary: '',
-      userFacts: []
+      userFacts: [],
+      characterFacts: []
     };
 
     profiles.default = legacyProfile;
-
-    // If there was a saved user name but no explicit profile, could create one
-    // For now, everything goes to default
     console.log('Migrated legacy data to profile: default');
     return profiles;
   }

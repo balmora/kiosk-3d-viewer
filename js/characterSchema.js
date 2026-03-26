@@ -147,6 +147,36 @@ export const CHARACTER_SCHEMA = {
       }
     },
     
+    facts: {
+      type: "array",
+      description: "Static facts about the character that all users can see",
+      items: {
+        type: "object",
+        properties: {
+          text: { type: "string", description: "The fact text" },
+          category: {
+            type: "string",
+            enum: ["preference", "biographical", "interest", "hobby", "other"],
+            description: "Fact category"
+          },
+          confidence: {
+            type: "number",
+            minimum: 0,
+            maximum: 1,
+            default: 0.9,
+            description: "Confidence level"
+          },
+          privacy: {
+            type: "string",
+            enum: ["private", "shared", "public"],
+            default: "public",
+            description: "Who can see this fact"
+          }
+        },
+        required: ["text"]
+      }
+    },
+    
     memory_influence: {
       type: "object",
       description: "How memory affects character behavior",
@@ -213,5 +243,9 @@ export const DEFAULT_CHARACTER_SHEET = {
       "I don't have feelings",
       "I cannot physically be with you"
     ]
-  }
+  },
+  facts: [
+    { text: "Luna loves rainy days and finds the sound of rain soothing", category: "preference", confidence: 0.9 },
+    { text: "She enjoys listening to classical music while reading", category: "interest", confidence: 0.8 }
+  ]
 };
