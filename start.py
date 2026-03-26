@@ -11,6 +11,7 @@ import subprocess
 import webbrowser
 import socket
 import requests
+import json
 
 def check_port(port, host='localhost'):
     """Check if a port is open and responding"""
@@ -50,6 +51,30 @@ def check_python_package(package):
         return True
     except ImportError:
         return False
+
+def get_character_name():
+    """Get character name from character.json if it exists"""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    # Try models/character.json first, then project root
+    paths = [
+        os.path.join(script_dir, 'models', 'character.json'),
+        os.path.join(script_dir, 'character.json')
+    ]
+    
+    for path in paths:
+        if os.path.exists(path):
+            try:
+                with open(path, 'r') as f:
+                    data = json.load(f)
+                    name = data.get('identity', {}).get('name')
+                    if name:
+                        print(f"[OK] Character name: {name}")
+                        return name
+            except Exception as e:
+                print(f"[WARN] Could not read character.json: {e}")
+    
+    return None
 
 def main():
     print("=" * 50)
@@ -148,11 +173,20 @@ def main():
         print("[..] Starting Kokoro TTS server...")
         script_dir = os.path.dirname(os.path.abspath(__file__))
         kokoro_script = os.path.join(script_dir, 'kokoro_server.py')
-
+        
+        # Get character name for Kokoro test text
+        character_name = get_character_name()
+        
         try:
+            # Set environment variable for character name
+            env = os.environ.copy()
+            if character_name:
+                env['KIOSK_CHARACTER_NAME'] = character_name
+            
             kokoro_proc = subprocess.Popen(
                 [sys.executable, kokoro_script],
                 cwd=script_dir,
+                env=env,
                 start_new_session=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE

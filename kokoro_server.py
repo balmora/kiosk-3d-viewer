@@ -1,15 +1,19 @@
 """
 Kokoro TTS API Server
 Runs on http://localhost:8000
-Fast streaming TTS for Luna
+Fast streaming TTS for AI companion
 """
 
 import sys
 import subprocess
+import os
 
 # ==================================================
-#  AUTO INSTALL PACKAGES
+#  CONFIGURATION
 # ==================================================
+
+# Character name for test/development (can be overridden via environment variable)
+DEFAULT_CHARACTER_NAME = os.environ.get('KIOSK_CHARACTER_NAME', 'your AI companion')
 
 REQUIRED_PACKAGES = [
     ('flask',       'flask'),
@@ -398,7 +402,8 @@ def test():
         return jsonify({"error": "Model not loaded"}), 500
 
     try:
-        test_text = "Hello! I am Luna, your AI companion. How are you today?"
+        character_name = os.environ.get('KIOSK_CHARACTER_NAME', DEFAULT_CHARACTER_NAME)
+        test_text = f"Hello! I am {character_name}. How are you today?"
         test_text = clean_text(test_text)
 
         print(f"Test: {test_text}")
