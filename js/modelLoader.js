@@ -73,7 +73,8 @@ export async function loadModel(scene, modelPath = './models/avatar.gltf') {
         const morphTargets = extractMorphTargets(model);
         const bones = extractBones(model);
 
-        console.log('Morph targets found:', Object.keys(morphTargets));
+        // Enhanced morph target debug output
+        logMorphTargets(model, morphTargets);
         console.log('Bones found:', Object.keys(bones));
 
         const mixer = new THREE.AnimationMixer(model);
@@ -112,6 +113,62 @@ function extractMorphTargets(model) {
     }
   });
   return morphTargets;
+}
+
+function logMorphTargets(model, morphTargets) {
+  console.log('%c=== MORPH TARGET ANALYSIS ===', 'color: #00ff00; font-weight: bold; font-size: 14px');
+  
+  const keys = Object.keys(morphTargets);
+  if (keys.length === 0) {
+    console.log('%cNo morph targets found in this model.', 'color: #ff9900');
+    console.log('%cTip: Add blend shapes in Blender to enable facial expressions.', 'color: #888888');
+  } else {
+    console.log(`%cFound ${keys.length} morph target(s):`, 'color: #00ff00', keys.join(', '));
+    
+    // Categorize morph targets
+    const categories = {
+      mouth: keys.filter(k => /mouth|viseme|phoneme|a_|e_|i_|o_|u_/.test(k)),
+      eye: keys.filter(k => /eye|blink|brow|lash/.test(k)),
+      expression: keys.filter(k => /smile|frown|happy|sad|angry|surprise|confuse/.test(k)),
+      face: keys.filter(k => /cheek|jaw|chin|nose|forehead|head/.test(k)),
+      other: keys.filter(k => !/mouth|viseme|phoneme|a_|e_|i_|o_|u_|eye|blink|brow|lash|smile|frown|happy|sad|angry|surprise|confuse|cheek|jaw|chin|nose|forehead|head/.test(k))
+    };
+    
+    console.log('%c--- Categorized Morph Targets ---', 'color: #888888');
+    for (const [category, targets] of Object.entries(categories)) {
+      if (targets.length > 0) {
+        console.log(`%c${category}: %c${targets.join(', ')}`, 'color: #ff9900', 'color: #ffffff');
+      }
+    }
+    
+    // Lip-sync readiness
+    console.log('%c--- Lip-Sync Readiness ---', 'color: #888888');
+    const hasMouthShapes = categories.mouth.length > 0;
+    console.log(hasMouthShapes 
+      ? `%cMouth shapes: %c✓ ${categories.mouth.length} phoneme(s) available` 
+      : '%cMouth shapes: %c✗ None - add mouth_A, mouth_E, etc. in Blender',
+      'color: #00ff00', 'color: #ffffff', 'color: #ff0000');
+    
+    // Expression readiness  
+    console.log('%cExpression ready: %c' + (categories.expression.length > 0 ? '✓ Yes' : '✗ No - add smile, frown, etc. in Blender'), 
+      categories.expression.length > 0 ? 'color: #00ff00' : 'color: #ff9900');
+    
+    // Blink readiness
+    const hasBlink = categories.eye.some(k => /blink/.test(k));
+    console.log(hasBlink 
+      ? '%cBlink shapes: %c✓ Found' 
+      : '%cBlink shapes: %c✗ None - add blink_left, blink_right in Blender',
+      'color: #00ff00', 'color: #ffffff', 'color: #ff9900');
+    
+    console.log('%c================================', 'color: #00ff00');
+  }
+  
+  // Also log per-mesh details
+  model.traverse((child) => {
+    if (child.isMesh && child.morphTargetInfluences && child.morphTargetInfluences.length > 0) {
+      console.log(`%cMesh "${child.name}" has ${child.morphTargetInfluences.length} morph influences`, 'color: #888888');
+    }
+  });
 }
 
 function extractBones(model) {
