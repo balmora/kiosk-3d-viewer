@@ -21,6 +21,10 @@ models/*.gltf
 # Keep the models folder but ignore large files
 !models/.gitkeep
 
+# Character sheets are user-specific and should not be committed
+models/character.json
+character.json
+
 # Ignore downloaded libraries
 libs/*
 

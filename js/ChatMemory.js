@@ -1,5 +1,20 @@
 import { CONFIG } from './config.js?v=2';
 
+/**
+ * ChatMemory - Multi-profile persistent memory system
+ * 
+ * Storage Architecture:
+ * - Current: localStorage (simple, sync, 5MB limit)
+ * - Future: IndexedDB via adapter pattern
+ * 
+ * To upgrade to IndexedDB:
+ * 1. Create IStorageAdapter interface
+ * 2. Implement LocalStorageAdapter (current behavior)
+ * 3. Implement IndexedDBAdapter (future)
+ * 4. Add migration from localStorage to IndexedDB
+ * 5. Update constructor to accept adapter instance
+ */
+
 export class ChatMemory {
   constructor(storageKey = 'luna_chat_history', maxHistory = 10) {
     this.storageKey = storageKey;

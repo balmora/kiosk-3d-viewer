@@ -77,14 +77,19 @@ kiosk-3d-viewer/
 ├── README.md
 ├── js/
 │ ├── main.js
+│ ├── config.js
 │ ├── modelLoader.js
 │ ├── animationController.js
 │ ├── lipSync.js
 │ ├── aiController.js
+│ ├── ChatMemory.js ← multi-profile memory
+│ ├── characterSchema.js ← character sheet schema
 │ └── sceneSetup.js
 ├── libs/ ← created by setup.py
 ├── voice/ ← created by setup.py
-└── models/ ← add your .gltf model here
+└── models/
+    ├── Luna.gltf ← your 3D model
+    └── character.json ← character personality sheet
 ```
 ---
 
@@ -241,22 +246,40 @@ To reset to the default Luna, simply delete `character.json` from your models fo
 
 ## Persistent Memory & Multi-User Profiles
 
-The system now features **persistent multi-profile memory**, allowing different users to have separate, personalized conversation histories that persist across sessions.
+The system features **persistent multi-profile memory** with support for multiple characters and privacy levels.
 
 ### Features
 
 - **Profile Separation**: Each user gets their own profile automatically when they introduce their name. Profiles are stored in browser localStorage.
-- **Conversation Memory**: Full chat history is preserved per user, so Luna remembers past conversations.
-- **Automatic Facts Extraction**: Luna learns preferences, interests, and biographical details from conversations (e.g., "I love sci-fi" → saved as a user fact).
-- **Conversation Summarization**: After many messages, Luna automatically summarizes older conversations to keep context while managing token usage.
+- **Multi-Character Support**: Different character-user pairs have separate profiles (e.g., "Alex with Mona" is separate from "Alex with Alice").
+- **Conversation Memory**: Full chat history is preserved per profile, so the character remembers past conversations.
+- **Automatic Facts Extraction**: Learn preferences, interests, and biographical details from conversations.
+- **Conversation Summarization**: After many messages, automatically summarize older conversations to keep context while managing token usage.
+- **Character Facts**: Each character has their own facts (e.g., "Mona loves cats"). Character facts can be public for all users to benefit from.
+- **Privacy Levels**: Facts can be `private` (per character), `shared` (visible to all), or `public` (no attribution).
 - **Backward Compatible**: Existing single-user data is automatically migrated to the new system.
 
-### How Profiles Work
+### Memory Scopes
 
-1. When a user says "I'm [Name]" or "My name is [Name]", a new profile is created (or an existing one is activated).
-2. The active profile's history, name, and learned facts are automatically used in subsequent conversations.
-3. Switching users (by introducing a new name) seamlessly changes Luna's memory context.
-4. Profile information is visible in the chat history panel (name, visit count, fact count).
+| Scope | Description | Example |
+|-------|-------------|---------|
+| `user` | About the user in this profile | "Alex's birthday is March 15" |
+| `character` | About the AI persona | "Mona loves cats" |
+
+### Privacy Levels
+
+| Level | Description | Access |
+|-------|-------------|--------|
+| `private` | Only within this profile | Like meeting someone new |
+| `shared` | Visible to all users | Attributed to who shared it |
+| `public` | No attribution, visible to all | Character lore |
+
+### How It Works
+
+1. **New conversation**: When you talk to Mona, a profile like `alex_mona` is created (or loaded if exists).
+2. **Facts default to private**: Each character starts fresh - facts are private by default, like meeting someone new.
+3. **Character memories**: Mona might have facts about herself ("Mona loves rainy days") that all users can see.
+4. **Switching characters**: When you switch to Alice, a new separate profile is created for you and Alice.
 
 ### Configuration
 
@@ -269,11 +292,12 @@ memory: {
   factExtractionDebounceMs: 30000,  // Extract facts no more often than 30s
   summaryInterval: 20,               // Summarize every 20 messages
   maxMessagesWithSummary: 5,         // Keep only last 5 messages after summarizing
-  summarizationDebounceMs: 60000    // Don't summarize more often than 60s
+  summarizationDebounceMs: 60000,    // Don't summarize more often than 60s
+  defaultPrivacy: 'private'          // 'private', 'shared', or 'public'
 }
 ```
 
-### privacy
+### Privacy
 
 All data is stored locally in the browser's localStorage. No data is sent to external servers beyond the local Ollama instance. Profiles can be cleared using the trash button in the chat UI.
 

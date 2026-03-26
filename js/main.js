@@ -22,7 +22,7 @@ async function loadCharacterSheet() {
   for (const path of paths) {
     try {
       console.log(`Trying to load character sheet from: ${path}`);
-      const response = await fetch(path);
+      const response = await fetch(`${path}?v=${Date.now()}`);
       console.log(`Response for ${path}:`, response.status, response.ok);
       if (response.ok) {
         const sheet = await response.json();
