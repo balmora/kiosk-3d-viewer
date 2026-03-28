@@ -23,6 +23,29 @@ export class ModelManager {
     this.currentModel = null;   // Currently loaded model info
     this.currentCharacterSheet = null;
     this.modelPath = null;
+    this.storageKey = 'kiosk_selected_model';
+  }
+
+  /**
+   * Save selected model to localStorage
+   */
+  _saveSelectedModel(modelName) {
+    try {
+      localStorage.setItem(this.storageKey, modelName);
+    } catch (e) {
+      logger.warn('Failed to save selected model:', e);
+    }
+  }
+
+  /**
+   * Load saved model name from localStorage
+   */
+  _loadSavedModelName() {
+    try {
+      return localStorage.getItem(this.storageKey);
+    } catch (e) {
+      return null;
+    }
   }
 
   /**
@@ -117,10 +140,23 @@ export class ModelManager {
   }
 
   /**
-   * Get the first model to load (highest priority)
+   * Get the first model to load (saved preference, or highest priority)
    */
   getDefaultModel() {
-    return this.models.length > 0 ? this.models[0] : null;
+    if (this.models.length === 0) return null;
+    
+    // Check for saved model preference
+    const savedModelName = this._loadSavedModelName();
+    if (savedModelName) {
+      const savedModel = this.findModelByName(savedModelName);
+      if (savedModel) {
+        logger.info(`Loading saved model: ${savedModel.displayName}`);
+        return savedModel;
+      }
+    }
+    
+    // Fall back to highest priority model
+    return this.models[0];
   }
 
   /**
@@ -155,6 +191,9 @@ export class ModelManager {
     if (!modelInfo.characterSheet) {
       this.currentCharacterSheet.identity.name = modelInfo.displayName;
     }
+    
+    // Save preference to localStorage
+    this._saveSelectedModel(modelInfo.name);
     
     return {
       modelPath: this.modelPath,

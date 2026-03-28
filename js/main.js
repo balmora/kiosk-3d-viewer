@@ -59,10 +59,11 @@ async function init() {
     renderer.setSize(width, height);
   }
 
-  // Load model
+  // Load model with cache-buster
+  const cacheBuster = `?v=${Date.now()}`;
   console.log(`Loading model from: ${modelPath}`);
   const { model, mixer, clips, morphTargets, bones } =
-    await loadModel(scene, modelPath, CONFIG.model.heightM);
+    await loadModel(scene, modelPath + cacheBuster, CONFIG.model.heightM);
 
   // Apply manual floor offset to model
   model.position.y += CONFIG.model.floorOffsetY;
