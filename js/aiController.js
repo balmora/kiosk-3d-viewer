@@ -1233,11 +1233,6 @@ Important: Output ONLY the JSON object, no other text.`;
     
     return `Model switching is not available right now.`;
   }
-        return { keyword, ...data };
-      }
-    }
-    return { keyword: 'talk', anim: 'talk', emoji: 'speak' };
-  }
 
   // ==================================================
   //  OLLAMA
