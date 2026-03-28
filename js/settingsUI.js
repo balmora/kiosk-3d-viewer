@@ -240,7 +240,7 @@ export class SettingsUI {
     // Close on outside click
     document.addEventListener('click', (e) => {
       if (panel.style.display === 'block' &&
-          panel.contains(e.target) &&
+          !panel.contains(e.target) &&
           !e.target.closest('#settingsBtn')) {
         panel.style.display = 'none';
       }
