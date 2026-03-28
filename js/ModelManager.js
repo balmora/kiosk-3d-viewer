@@ -1,0 +1,200 @@
+/**
+ * ModelManager - Handles model discovery, loading, and switching
+ * 
+ * Manages multiple 3D models with their associated character sheets.
+ * Models are stored in subfolders under /models/ with optional character.json files.
+ * 
+ * Folder structure:
+ * /models/
+ *   Luna/
+ *     Luna.gltf
+ *     character.json (optional)
+ *   2B/
+ *     2B.gltf
+ *     character.json (optional)
+ */
+
+import { DEFAULT_CHARACTER_SHEET } from './characterSchema.js';
+import { logger } from './logger.js';
+
+export class ModelManager {
+  constructor() {
+    this.models = [];           // List of available models
+    this.currentModel = null;   // Currently loaded model info
+    this.currentCharacterSheet = null;
+    this.modelPath = null;
+  }
+
+  /**
+   * Discover all available models in the /models/ folder
+   */
+  async discoverModels() {
+    logger.info('Discovering available models...');
+    
+    const models = [];
+    const modelExtensions = ['.gltf', '.glb'];
+    
+    // Try to fetch the models folder to list contents
+    // This is a best-effort discovery since we can't list directories in browser
+    const possibleNames = ['Luna', 'Mona', 'Alice', '2B', 'Default'];
+    
+    for (const name of possibleNames) {
+      const modelInfo = await this._checkModel(name);
+      if (modelInfo) {
+        models.push(modelInfo);
+      }
+    }
+    
+    // Sort by priority (lower number = higher priority)
+    models.sort((a, b) => (a.priority || 999) - (b.priority || 999));
+    
+    this.models = models;
+    logger.info(`Found ${models.length} model(s):`, models.map(m => m.name).join(', '));
+    
+    return models;
+  }
+
+  /**
+   * Check if a model exists at the expected path
+   */
+  async _checkModel(name) {
+    const basePath = `./models/${name}`;
+    const extensions = ['.gltf', '.glb'];
+    
+    for (const ext of extensions) {
+      const modelPath = `${basePath}/${name}${ext}`;
+      try {
+        const response = await fetch(modelPath, { method: 'HEAD' });
+        if (response.ok) {
+          // Found the model, now check for character sheet
+          const characterSheet = await this._loadCharacterSheet(name);
+          return {
+            name: name,
+            displayName: characterSheet?.identity?.name || name,
+            path: modelPath,
+            folder: basePath,
+            characterSheet: characterSheet,
+            priority: characterSheet?.priority || 999
+          };
+        }
+      } catch (e) {
+        // Model not found at this path
+      }
+    }
+    
+    return null;
+  }
+
+  /**
+   * Load character sheet from model's folder
+   */
+  async _loadCharacterSheet(modelName) {
+    const charPath = `./models/${modelName}/character.json`;
+    
+    try {
+      const response = await fetch(`${charPath}?v=${Date.now()}`);
+      if (response.ok) {
+        const sheet = await response.json();
+        logger.info(`Loaded character sheet for ${sheet.identity?.name || modelName}`);
+        return sheet;
+      }
+    } catch (e) {
+      logger.debug(`No character sheet found for ${modelName}`);
+    }
+    
+    return null;
+  }
+
+  /**
+   * Get list of available models for UI
+   */
+  getAvailableModels() {
+    return this.models.map(m => ({
+      name: m.name,
+      displayName: m.displayName,
+      path: m.path
+    }));
+  }
+
+  /**
+   * Get the first model to load (highest priority)
+   */
+  getDefaultModel() {
+    return this.models.length > 0 ? this.models[0] : null;
+  }
+
+  /**
+   * Find a model by name (case-insensitive)
+   */
+  findModelByName(name) {
+    const normalized = name.toLowerCase().trim();
+    return this.models.find(m => 
+      m.name.toLowerCase() === normalized ||
+      m.displayName.toLowerCase() === normalized
+    );
+  }
+
+  /**
+   * Load a specific model by name
+   */
+  async loadModel(name) {
+    const modelInfo = this.findModelByName(name);
+    
+    if (!modelInfo) {
+      logger.warn(`Model "${name}" not found`);
+      return null;
+    }
+    
+    logger.info(`Loading model: ${modelInfo.displayName}`);
+    
+    this.currentModel = modelInfo;
+    this.modelPath = modelInfo.path;
+    this.currentCharacterSheet = modelInfo.characterSheet || { ...DEFAULT_CHARACTER_SHEET };
+    
+    // Update default sheet name if no character sheet
+    if (!modelInfo.characterSheet) {
+      this.currentCharacterSheet.identity.name = modelInfo.displayName;
+    }
+    
+    return {
+      modelPath: this.modelPath,
+      characterSheet: this.currentCharacterSheet
+    };
+  }
+
+  /**
+   * Get the current model path
+   */
+  getCurrentModelPath() {
+    return this.modelPath;
+  }
+
+  /**
+   * Get the current character sheet
+   */
+  getCurrentCharacterSheet() {
+    return this.currentCharacterSheet;
+  }
+
+  /**
+   * Get the current model info
+   */
+  getCurrentModel() {
+    return this.currentModel;
+  }
+
+  /**
+   * Check if a model name matches the current model
+   */
+  isCurrentModel(name) {
+    if (!this.currentModel) return false;
+    const normalized = name.toLowerCase().trim();
+    return (
+      this.currentModel.name.toLowerCase() === normalized ||
+      this.currentModel.displayName.toLowerCase() === normalized
+    );
+  }
+}
+
+// Singleton instance
+export const modelManager = new ModelManager();

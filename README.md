@@ -79,6 +79,7 @@ kiosk-3d-viewer/
 │ ├── main.js
 │ ├── config.js
 │ ├── modelLoader.js
+│ ├── ModelManager.js ← multi-model support
 │ ├── animationController.js
 │ ├── lipSync.js
 │ ├── aiController.js
@@ -88,8 +89,12 @@ kiosk-3d-viewer/
 ├── libs/ ← created by setup.py
 ├── voice/ ← created by setup.py
 └── models/
-    ├── Luna.gltf ← your 3D model
-    └── character.json ← character personality sheet
+    └── Luna/
+        ├── Luna.gltf ← 3D model
+        └── character.json ← personality sheet
+    └── 2B/
+        ├── 2B.gltf ← 3D model
+        └── character.json ← personality sheet
 ```
 ---
 
@@ -300,6 +305,67 @@ memory: {
 ### Privacy
 
 All data is stored locally in the browser's localStorage. No data is sent to external servers beyond the local Ollama instance. Profiles can be cleared using the trash button in the chat UI.
+
+---
+
+## Multi-Model Support
+
+The system supports **multiple 3D models** with their own character sheets. Models are stored in subfolders under `/models/`.
+
+### Folder Structure
+
+```
+/models/
+├── Luna/
+│   ├── Luna.gltf
+│   └── character.json (optional)
+├── Mona/
+│   ├── Mona.gltf
+│   └── character.json (optional)
+└── 2B/
+    ├── 2B.gltf
+    └── character.json (optional)
+```
+
+### Adding a New Model
+
+1. Create a new folder under `/models/` (e.g., `/models/Alice/`)
+2. Add your `.gltf` or `.glb` file to the folder
+3. Optionally add a `character.json` file with personality settings
+4. The system will auto-discover your model on next load
+
+### Character Sheet with Priority
+
+Add a `priority` field to control which model loads first:
+
+```json
+{
+  "version": "1.0",
+  "priority": 1,
+  "identity": {
+    "name": "Luna"
+  },
+  ...
+}
+```
+
+Lower number = higher priority. Models with priority 1 load first.
+
+### Switching Models
+
+**Chat command:**
+- Type "switch Luna" to switch to Luna
+- Type "switch 2B" to switch to 2B
+
+**UI:**
+- Open Settings panel (gear icon)
+- Select model from dropdown
+
+### Model with Textures
+
+If your model uses textures:
+- Place texture files (`.png`, `.jpg`) in the same folder as the `.gltf`
+- Or export as `.glb` which embeds textures in a single file
 
 ---
 

@@ -845,6 +845,19 @@ Important: Output ONLY the JSON object, no other text.`;
 
   async _handleMessage(text) {
     const lower  = text.toLowerCase();
+    
+    // Check for model switch command first
+    const switchTarget = this._detectSwitchCommand(text);
+    if (switchTarget) {
+      const response = await this._handleModelSwitch(switchTarget);
+      this._addToHistory('user', text);
+      this._addToHistory('assistant', response);
+      this._updateHistoryPanel();
+      this._saveHistory();
+      await this._speak(response);
+      return;
+    }
+    
     const intent = this._detectIntent(lower);
 
     this._extractUserInfo(text);
@@ -1128,18 +1141,98 @@ Important: Output ONLY the JSON object, no other text.`;
 
   _detectIntent(text) {
     const lower = text.toLowerCase();
-    const negations = /(not|n't|never)/;
+    const negations = /\b(not|n't|never)\b/;
 
     for (const [keyword, data] of Object.entries(this.intentMap)) {
-      const pattern = new RegExp(`\b${keyword}\b`, 'i');
+      const pattern = new RegExp(`\\b${keyword}\\b`, 'i');
       const match = pattern.exec(lower);
       if (match) {
         // Check for preceding negation within 3 words
         const beforeText = lower.substring(0, match.index).trim();
-        const beforeWords = beforeText.split(/s+/).slice(-3);
+        const beforeWords = beforeText.split(/\s+/).slice(-3);
         if (beforeWords.some(w => negations.test(w))) {
           continue; // Skip this intent due to negation
         }
+        return { keyword, ...data };
+      }
+    }
+    return { keyword: 'talk', anim: 'talk', emoji: 'speak' };
+  }
+
+  _detectSwitchCommand(text) {
+    const lower = text.toLowerCase().trim();
+    
+    // Patterns for switch commands
+    const patterns = [
+      /^switch\s+(.+)$/i,
+      /^be\s+(.+)$/i,
+      /^load\s+(?:model\s+)?(.+)$/i,
+      /^become\s+(.+)$/i,
+      /^change\s+(?:to\s+)?(.+)$/i
+    ];
+    
+    for (const pattern of patterns) {
+      const match = lower.match(pattern);
+      if (match && match[1]) {
+        return match[1].trim();
+      }
+    }
+    
+    return null;
+  }
+
+  async _handleModelSwitch(modelName) {
+    logger.info(`Switch command detected for model: ${modelName}`);
+    
+    // Check if already using this model
+    if (window.avatar?.modelManager?.isCurrentModel(modelName)) {
+      logger.info(`Already using model: ${modelName}`);
+      return "I am already " + modelName + ".";
+    }
+    
+    // Check if model exists
+    const availableModels = window.avatar?.modelManager?.getAvailableModels() || [];
+    const modelExists = availableModels.some(m => 
+      m.name.toLowerCase() === modelName.toLowerCase() ||
+      m.displayName.toLowerCase() === modelName.toLowerCase()
+    );
+    
+    if (!modelExists) {
+      const modelList = availableModels.map(m => m.displayName).join(', ');
+      return `I don't know ${modelName}. Available models: ${modelList || 'none'}.`;
+    }
+    
+    // Trigger model switch
+    // This will be handled by the model switching system
+    if (window.avatar?.modelManager) {
+      try {
+        await window.avatar.modelManager.loadModel(modelName);
+        
+        // Update UI
+        const newCharacterSheet = window.avatar.modelManager.getCurrentCharacterSheet();
+        const newAvatarName = newCharacterSheet?.identity?.name || modelName;
+        
+        document.title = newAvatarName;
+        const promptInput = document.getElementById('aiPrompt');
+        if (promptInput) {
+          promptInput.placeholder = `Talk to ${newAvatarName}...`;
+        }
+        
+        // Reinitialize AIController with new character
+        // For now, just update the name
+        this.avatarName = newAvatarName;
+        this.characterSheet = newCharacterSheet;
+        this.systemPrompt = this._buildCharacterPrompt(newAvatarName);
+        
+        return `Switching to ${newAvatarName}... Give me a moment!`;
+      } catch (e) {
+        logger.error('Model switch failed:', e);
+        return `Sorry, I couldn't switch to ${modelName}.`;
+      }
+    }
+    
+    return `Model switching is not available right now.`;
+  }
         return { keyword, ...data };
       }
     }

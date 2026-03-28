@@ -9,13 +9,6 @@ export class SettingsUI {
     this.settings = this.loadSettings();
     this.applySettings();
   }
-  applySettings() {
-    this.aiController.ttsVoice = this.settings.voice;
-    this.aiController.headBobIntensity = this.settings.headBobIntensity;
-    // Also configure global logger
-    if (window.logger) window.logger.setLevel(this.settings.logLevel);
-    else logger.setLevel(this.settings.logLevel);
-  }
 
   applySettings() {
     this.aiController.ttsVoice = this.settings.voice;
@@ -93,8 +86,67 @@ export class SettingsUI {
 
     const title = document.createElement('div');
     title.style.cssText = 'color:#ff69b4;font-weight:bold;margin-bottom:12px;text-align:center;';
-    title.textContent = `settings ${CONFIG.avatar.name} Settings`;
+    title.textContent = `Settings`;
     panel.appendChild(title);
+
+    // Model selector
+    const modelLabel = document.createElement('label');
+    modelLabel.textContent = 'Model:';
+    modelLabel.style.display = 'block';
+    modelLabel.style.marginBottom = '4px';
+    modelLabel.style.color = '#ccc';
+    panel.appendChild(modelLabel);
+
+    const modelSelect = document.createElement('select');
+    modelSelect.style.width = '100%';
+    modelSelect.style.marginBottom = '12px';
+    modelSelect.style.padding = '6px';
+    modelSelect.style.borderRadius = '4px';
+    modelSelect.style.border = '1px solid #ff69b4';
+    modelSelect.style.background = '#222';
+    modelSelect.style.color = '#fff';
+
+    // Populate model list
+    const models = window.avatar?.modelManager?.getAvailableModels() || [];
+    const currentModel = window.avatar?.modelManager?.getCurrentModel();
+    
+    if (models.length === 0) {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = 'No models found';
+      modelSelect.appendChild(opt);
+    } else {
+      models.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.name;
+        opt.textContent = m.displayName;
+        if (currentModel && m.name === currentModel.name) {
+          opt.selected = true;
+        }
+        modelSelect.appendChild(opt);
+      });
+    }
+
+    modelSelect.addEventListener('change', async (e) => {
+      const selectedModel = e.target.value;
+      if (selectedModel && selectedModel !== currentModel?.name) {
+        const response = await this.aiController._handleModelSwitch(selectedModel);
+        this.aiController._addToHistory('assistant', response);
+        this.aiController._updateHistoryPanel();
+        await this.aiController._speak(response);
+        
+        // Reload the page to fully reset everything
+        window.location.reload();
+      }
+    });
+    panel.appendChild(modelSelect);
+
+    // Current character display
+    const charLabel = document.createElement('div');
+    charLabel.style.cssText = 'color:#888;font-size:11px;margin-bottom:12px;text-align:center;';
+    const charName = window.avatar?.modelManager?.getCurrentModel()?.displayName || 'Unknown';
+    charLabel.textContent = `Character: ${charName}`;
+    panel.appendChild(charLabel);
 
     // Voice selector
     const voiceLabel = document.createElement('label');

@@ -7,43 +7,28 @@ import { AnimationController } from './animationController.js';
 import { LipSync }             from './lipSync.js';
 import { AIController }        from './aiController.js';
 import { CONFIG }              from './config.js';
+import { modelManager }        from './ModelManager.js';
 
-/**
- * Load character sheet from JSON file.
- * Searches in same folder as model (./models/character.json) first,
- * then falls back to project root (/character.json).
- */
-async function loadCharacterSheet() {
-  const paths = [
-    './models/character.json',
-    './character.json'
-  ];
-
-  for (const path of paths) {
-    try {
-      console.log(`Trying to load character sheet from: ${path}`);
-      const response = await fetch(`${path}?v=${Date.now()}`);
-      console.log(`Response for ${path}:`, response.status, response.ok);
-      if (response.ok) {
-        const sheet = await response.json();
-        console.log(`Character sheet loaded from ${path}:`, sheet.identity?.name);
-        return sheet;
-      }
-    } catch (e) {
-      console.error(`Error loading ${path}:`, e.message);
-      // Try next path
-    }
-  }
-  console.warn('No character sheet found, using default personality');
-  return null;
-}
-
-// Set page title to avatar name (will update after character sheet loads)
+// Set page title to default name
 document.title = CONFIG.avatar.name;
 
 async function init() {
-  // Load character sheet before initializing AI
-  const characterSheet = await loadCharacterSheet();
+  // Discover available models
+  console.log('Discovering models...');
+  await modelManager.discoverModels();
+  
+  // Get default model (highest priority)
+  const defaultModel = modelManager.getDefaultModel();
+  if (!defaultModel) {
+    console.error('No models found! Please add a model to the /models/ folder.');
+    return;
+  }
+  
+  console.log(`Default model: ${defaultModel.displayName}`);
+  
+  // Load the default model
+  const { modelPath, characterSheet } = await modelManager.loadModel(defaultModel.name);
+  
   const canvas = document.getElementById('viewer');
   const { scene, camera, renderer } = createScene(canvas, CONFIG.camera.fov);
 
@@ -75,8 +60,9 @@ async function init() {
   }
 
   // Load model
+  console.log(`Loading model from: ${modelPath}`);
   const { model, mixer, clips, morphTargets, bones } =
-    await loadModel(scene, CONFIG.model.path, CONFIG.model.heightM);
+    await loadModel(scene, modelPath, CONFIG.model.heightM);
 
   // Apply manual floor offset to model
   model.position.y += CONFIG.model.floorOffsetY;
@@ -114,7 +100,13 @@ async function init() {
     promptInput.placeholder = `Talk to ${avatarName}...`;
   }
 
-  window.avatar = { animController, lipSync, aiController };
+  // Expose global for debugging and model switching
+  window.avatar = { 
+    animController, 
+    lipSync, 
+    aiController,
+    modelManager
+  };
 
   // Render loop
   const clock = new THREE.Clock();
