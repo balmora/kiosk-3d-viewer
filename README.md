@@ -315,6 +315,12 @@ All data is stored locally in the browser's localStorage. No data is sent to ext
 
 The system supports **outfit switching** - changing which meshes are visible on the 3D model. This allows the character to change clothes, add accessories, or switch between different appearances.
 
+> **Note:** Some models (like Luna) have a single unified mesh and cannot switch outfits via mesh visibility. For these models, use **animations** to change poses/expressions instead. The "objects" button will show available meshes (may be empty or show unnamed meshes).
+
+### UI Access
+
+Click the **"objects"** button in the bottom UI bar to toggle the mesh visibility panel. This panel shows all meshes found in the current model and allows you to toggle their visibility.
+
 ### Folder Structure
 
 ```
@@ -377,10 +383,115 @@ The `visibility.json` file defines which meshes are visible and which outfits ar
 
 ### Adding Outfits to Your Model
 
-1. Add meshes to your GLTF model in Blender with descriptive names
-2. Create `visibility.json` in your model's folder
-3. List mesh names and outfit configurations
-4. Mesh partial name matching is supported (e.g., "armor" matches "combat_armor")
+#### Step 1: Discover Mesh Names
+
+To create a visibility.json, you first need to know the mesh names in your model:
+
+1. Open the kiosk in browser
+2. Open Developer Tools (F12) → Console tab
+3. Look for logs like: `VisibilityManager: Found mesh "LOD0_23_Feather"`
+4. Or type in console:
+   ```javascript
+   window.avatar.visibilityManager.getAllMeshes()
+   ```
+
+This shows all meshes with their current visibility state.
+
+#### Step 2: Create visibility.json
+
+Create a file in your model's folder (e.g., `/models/2B/visibility.json`):
+
+```json
+{
+  "model": "2B",
+  "meshes": {
+    "LOD0_23_Feather": { "visible": true, "description": "Cape decoration" },
+    "LOD0_0_Armor_Body": { "visible": true, "description": "Main body armor" },
+    "LOD0_1_Armor_Head": { "visible": true, "description": "Head armor" },
+    "LOD0_2_Armor_Body": { "visible": false, "description": "Alt body armor" },
+    "LOD0_3_Armor_Body": { "visible": false, "description": "Alt body armor 2" },
+    "LOD0_4_Armor_Head": { "visible": false, "description": "Alt head armor" },
+    "LOD0_14_Broken": { "visible": false, "description": "Damage variant 1" },
+    "LOD0_15_Broken": { "visible": false, "description": "Damage variant 2" },
+    "LOD0_24_Broken": { "visible": false, "description": "Damage variant 3" }
+  },
+  "outfits": {
+    "default": {
+      "meshes": ["LOD0_23_Feather", "LOD0_0_Armor_Body", "LOD0_1_Armor_Head"],
+      "description": "Standard YoRHa combat uniform",
+      "tags": ["combat", "yorha", "standard"]
+    },
+    "casual": {
+      "meshes": ["LOD0_23_Feather"],
+      "description": "Civilian disguise without armor",
+      "tags": ["casual", "civilian", "relaxed"]
+    },
+    "armor": {
+      "meshes": ["LOD0_23_Feather", "LOD0_0_Armor_Body", "LOD0_1_Armor_Head", "LOD0_2_Armor_Body", "LOD0_3_Armor_Body", "LOD0_4_Armor_Head"],
+      "description": "Full combat gear with all armor",
+      "tags": ["armor", "combat", "heavy"]
+    },
+    "damaged": {
+      "meshes": ["LOD0_23_Feather", "LOD0_0_Armor_Body", "LOD0_1_Armor_Head", "LOD0_14_Broken", "LOD0_15_Broken", "LOD0_24_Broken"],
+      "description": "Combat armor with visible damage",
+      "tags": ["damaged", "battle", "worn"]
+    }
+  },
+  "time_rules": {
+    "21:00": "casual",
+    "06:00": "default"
+  },
+  "topic_keywords": {
+    "casual": "casual",
+    "relax": "casual",
+    "combat": "armor",
+    "battle": "armor",
+    "fight": "armor",
+    "heavy": "armor",
+    "damaged": "damaged",
+    "broken": "damaged"
+  }
+}
+```
+
+#### Step 3: Create character.json (Optional)
+
+Create a file for personality and voice settings:
+
+```json
+{
+  "version": "1.0",
+  "identity": {
+    "name": "2B",
+    "age": "appears 20s",
+    "archetype": "combat android",
+    "role": "YoRHa android warrior"
+  },
+  "model": {
+    "heightM": 1.6,
+    "floorOffsetY": 0.0,
+    "floorOffsetY_pos": 0.0,
+    "scale": 1.0,
+    "cameraDistance": 4.0,
+    "cameraHeight": 1.2,
+    "floorColor": 0x333333,
+    "ringColor": 0x00ff88
+  },
+  "voice": "af_sarah",
+  "animation": {
+    "headBobIntensity": 0.5
+  }
+}
+```
+
+#### Required Files Summary
+
+| File | Required | Purpose |
+|------|----------|---------|
+| `character.json` | No | Personality, voice, model settings |
+| `visibility.json` | No | Outfit/mesh visibility system |
+| `character.json` in root | No | Fallback if not in model folder |
+| `visibility.json` in root | No | Fallback if not in model folder |
 
 ---
 
