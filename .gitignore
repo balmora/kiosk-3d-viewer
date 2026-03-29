@@ -6,6 +6,9 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Ignore tool config files
+opencode.json
+
 # Ignore logs
 *.log
 
