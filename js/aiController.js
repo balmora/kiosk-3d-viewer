@@ -168,12 +168,13 @@ logger.info('TTS URLs configured:', { tts: this.ttsUrl, stream: this.kokoroUrl }
       return;
     }
 
-    logger.info('Warming up TTS silently...');
-    const warmupTexts = ['Hello', 'Testing audio', 'Loading'];
+    logger.info('Warming up TTS...');
+    const warmupTexts = ['Hello', 'Hi there', 'Warming up', 'Almost ready', 'Starting up'];
 
-    for (const text of warmupTexts) {
-      await warmupKokoro(text, this.ttsVoice, this.ttsUrl);
-      await new Promise(r => setTimeout(r, 300));
+    for (let i = 0; i < warmupTexts.length; i++) {
+      logger.info(`TTS warmup ${i + 1}/${warmupTexts.length}...`);
+      await warmupKokoro(warmupTexts[i], this.ttsVoice, this.ttsUrl);
+      await new Promise(r => setTimeout(r, 500));
     }
     logger.info('TTS warmup complete');
   }
