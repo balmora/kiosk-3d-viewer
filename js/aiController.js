@@ -494,7 +494,19 @@ Important: Output ONLY the JSON object, no other text.`;
     settingsBtn.textContent = 'settings';
     settingsBtn.title       = 'Settings';
     settingsBtn.addEventListener('click', () => this.settingsUI.toggle());
-    aiUi.appendChild(settingsBtn);;
+    aiUi.appendChild(settingsBtn);
+
+    // Mesh toggle button
+    const meshBtn       = document.createElement('button');
+    meshBtn.id          = 'meshBtn';
+    meshBtn.textContent = 'objects';
+    meshBtn.title       = 'Toggle mesh visibility';
+    meshBtn.addEventListener('click', () => {
+      if (this.visibilityManager) {
+        this.visibilityManager.toggleUI();
+      }
+    });
+    aiUi.appendChild(meshBtn);
 
     // OK History panel
     const panel         = document.createElement('div');
