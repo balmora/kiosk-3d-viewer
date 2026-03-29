@@ -1,7 +1,7 @@
 // aiController.js v9
 import { ChatMemory } from './ChatMemory.js?v=2';
 import * as THREE from 'three';
-import { cleanTextForTTS, speakWithKokoroRaw, speakWithBrowser, warmupKokoro } from './ttsCommon.js';
+import { cleanTextForTTS, speakWithKokoroRaw, speakWithBrowser, warmupKokoro } from './ttsCommon.js?v=3';
 import { fetchWithTimeout, fetchWithRetry } from './utils.js';
 import { CONFIG, getTtsUrls } from './config.js?v=2';
 import { SettingsUI } from './settingsUI.js';
