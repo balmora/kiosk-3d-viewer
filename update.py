@@ -77,6 +77,8 @@ def main():
 
     if current == remote:
         print("[OK] Already up to date!")
+        print()
+        input("Press Enter to exit...")
         sys.exit(0)
 
     # Check for local changes
@@ -158,6 +160,7 @@ def main():
     print("  Please restart the kiosk to apply changes.")
     print("=" * 50)
     print()
+    input("Press Enter to exit...")
 
 
 if __name__ == '__main__':
