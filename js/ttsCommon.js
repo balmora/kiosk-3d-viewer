@@ -30,7 +30,7 @@ export function cleanTextForTTS(text) {
 }
 
 /**
- * Silent Kokoro warmup - makes request and plays at volume 0
+ * Silent Kokoro warmup - just makes HTTP request to warm up server
  * @param {string} text - Text for TTS to process
  * @param {string} voice - Voice ID
  * @param {string} ttsUrl - Kokoro TTS endpoint URL
@@ -52,20 +52,9 @@ export async function warmupKokoro(text, voice, ttsUrl) {
         })
       }, 10000), 2);
 
-    if (!response.ok) return;
-    
-    const blob = await response.blob();
-    if (blob.size === 0) return;
-    
-    const url = URL.createObjectURL(blob);
-    const audio = new Audio(url);
-    audio.volume = 0;
-    
-    await audio.play().catch(() => {});
-    
-    setTimeout(() => {
-      URL.revokeObjectURL(url);
-    }, 100);
+    if (response.ok) {
+      await response.blob();
+    }
   } catch (e) {
     console.warn('[Kokoro] Warmup failed:', e.message);
   }

@@ -159,24 +159,28 @@ logger.info('TTS URLs configured:', { tts: this.ttsUrl, stream: this.kokoroUrl }
   }
 
   // ==================================================
-  //  TTS WARMUP
+  //  TTS WARMUP (called after greeting for subsequent messages)
   // ==================================================
 
   async _warmupTTS() {
     if (!this.ttsReady) {
-      logger.info('TTS not ready, skipping warmup');
       return;
     }
 
-    logger.info('Warming up TTS...');
-    const warmupTexts = ['Hello', 'Hi there', 'Warming up', 'Almost ready', 'Starting up'];
+    logger.info('Background TTS warmup...');
+    const warmupTexts = ['Hello', 'Testing audio', 'Ready'];
 
-    for (let i = 0; i < warmupTexts.length; i++) {
-      logger.info(`TTS warmup ${i + 1}/${warmupTexts.length}...`);
-      await warmupKokoro(warmupTexts[i], this.ttsVoice, this.ttsUrl);
-      await new Promise(r => setTimeout(r, 500));
+    for (const text of warmupTexts) {
+      await warmupKokoro(text, this.ttsVoice, this.ttsUrl);
+      await new Promise(r => setTimeout(r, 300));
     }
-    logger.info('TTS warmup complete');
+    logger.info('Background TTS warmup complete');
+  }
+
+  async _postGreetingWarmup() {
+    setTimeout(() => {
+      this._warmupTTS();
+    }, 1000);
   }
 
   // ==================================================
@@ -379,14 +383,7 @@ Important: Output ONLY the JSON object, no other text.`;
     }
 
     await this._unlockAudio();
-    logger.info('Audio unlocked');
-
-    await this._warmupTTS();
-    logger.info('TTS warmup done, waiting before greet...');
-
-    // Extra delay to ensure Kokoro is fully ready
-    await new Promise(r => setTimeout(r, 1000));
-    logger.info('Ready to greet, calling _greetUser...');
+    logger.info('Audio unlocked, proceeding to greet...');
 
     this._greetUser();
   }
@@ -858,6 +855,9 @@ Important: Output ONLY the JSON object, no other text.`;
     this.animController.stopHeadBob();
     bubble.remove();
     this.isSpeaking = false;
+
+    // Background warmup for subsequent messages
+    this._postGreetingWarmup();
 
     // OK Process any queued messages
     await this._processQueue();
