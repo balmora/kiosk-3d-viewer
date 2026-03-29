@@ -105,6 +105,7 @@ async function init() {
   const { model, mixer, clips, morphTargets, bones } =
     await loadModel(scene, modelPath + cacheBuster, modelConfig.heightM);
 
+  console.log('Model loaded, mesh count:', model.children.length);
   model.position.y += modelConfig.floorOffsetY;
   if (modelConfig.scale !== 1.0) {
     model.scale.multiplyScalar(modelConfig.scale);
@@ -142,9 +143,11 @@ async function init() {
       visibilityManager = new VisibilityManager(model, visibilityConfig);
       aiController.setVisibilityManager(visibilityManager);
       console.log('VisibilityManager loaded for:', defaultModel.name);
+    } else {
+      console.log('visibility.json not found for:', defaultModel.name);
     }
   } catch (e) {
-    console.log('No visibility config found for:', defaultModel.name);
+    console.log('VisibilityManager error:', e.message);
   }
 
   if (characterSheet?.facts && characterSheet.facts.length > 0) {
@@ -185,6 +188,7 @@ async function init() {
     renderer.render(scene, camera);
   }
   animate();
+  console.log('Init complete - avatar ready');
 }
 
 function addFloor(scene, cfg) {
