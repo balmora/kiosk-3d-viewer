@@ -90,8 +90,10 @@ export class ModelManager {
     // If character sheet specifies a filename, try that first
     if (filename) {
       const modelPath = `${basePath}/${filename}`;
+      console.log(`Checking model path: ${modelPath}`);
       try {
         const response = await fetch(modelPath, { method: 'HEAD' });
+        console.log(`Response for ${modelPath}: ${response.status} ${response.ok}`);
         if (response.ok) {
           return {
             name: name,
@@ -103,16 +105,20 @@ export class ModelManager {
           };
         }
       } catch (e) {
-        logger.warn(`Model file "${filename}" not found in ${name}/`);
+        console.error(`Error fetching ${modelPath}:`, e);
       }
+    } else {
+      console.log(`No filename specified in character sheet for ${name}`);
     }
     
     // Fall back to guessing filename from folder name
     const extensions = ['.gltf', '.glb'];
     for (const ext of extensions) {
       const modelPath = `${basePath}/${name}${ext}`;
+      console.log(`Checking fallback path: ${modelPath}`);
       try {
         const response = await fetch(modelPath, { method: 'HEAD' });
+        console.log(`Response for ${modelPath}: ${response.status} ${response.ok}`);
         if (response.ok) {
           return {
             name: name,
@@ -124,10 +130,11 @@ export class ModelManager {
           };
         }
       } catch (e) {
-        // Model not found at this path
+        console.error(`Error fetching ${modelPath}:`, e);
       }
     }
     
+    console.log(`No model found for ${name}`);
     return null;
   }
 
