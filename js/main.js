@@ -9,31 +9,60 @@ import { AIController }        from './aiController.js';
 import { CONFIG }              from './config.js';
 import { modelManager }        from './ModelManager.js';
 
-// Set page title to default name
+function getModelConfig(characterSheet) {
+  const model = characterSheet?.model || {};
+  return {
+    floorOffsetY: typeof model.floorOffsetY === 'number' ? model.floorOffsetY : CONFIG.model.floorOffsetY,
+    heightM: typeof model.heightM === 'number' ? model.heightM : CONFIG.model.heightM,
+    scale: typeof model.scale === 'number' ? model.scale : 1.0,
+    cameraDistance: typeof model.cameraDistance === 'number' ? model.cameraDistance : CONFIG.camera.positionZ,
+    cameraHeight: typeof model.cameraHeight === 'number' ? model.cameraHeight : CONFIG.camera.positionY,
+    floorColor: typeof model.floorColor === 'number' ? model.floorColor : CONFIG.floor.color,
+    ringColor: typeof model.ringColor === 'number' ? model.ringColor : CONFIG.floor.ringColor
+  };
+}
+
+function getVoiceConfig(characterSheet) {
+  const validVoices = ['af_sarah', 'af_bella', 'am_adam', 'am_lef', 'bf_emma', 'bf_isabella'];
+  const voice = characterSheet?.voice;
+  return validVoices.includes(voice) ? voice : CONFIG.tts.voice;
+}
+
+function getAnimationConfig(characterSheet) {
+  const anim = characterSheet?.animation || {};
+  return {
+    headBobIntensity: typeof anim.headBobIntensity === 'number' ? anim.headBobIntensity : CONFIG.animation.headBobIntensity,
+    blinkRate: typeof anim.blinkRate === 'number' ? anim.blinkRate : CONFIG.animation.idleBlinkInterval
+  };
+}
+
 document.title = CONFIG.avatar.name;
 
 async function init() {
-  // Discover available models
   console.log('Discovering models...');
   await modelManager.discoverModels();
   
-  // Get default model (highest priority)
   const defaultModel = modelManager.getDefaultModel();
   if (!defaultModel) {
     console.error('No models found! Please add a model to the /models/ folder.');
     return;
   }
   
-  console.log(`Default model: ${defaultModel.displayName}`);
+  console.log(`Loading model: ${defaultModel.displayName}`);
   
-  // Load the default model
   const { modelPath, characterSheet } = await modelManager.loadModel(defaultModel.name);
+  
+  const modelConfig = getModelConfig(characterSheet);
+  const voiceConfig = getVoiceConfig(characterSheet);
+  const animConfig = getAnimationConfig(characterSheet);
+  
+  console.log('Model config:', modelConfig);
+  console.log('Voice:', voiceConfig);
+  console.log('Animation config:', animConfig);
   
   const canvas = document.getElementById('viewer');
   const { scene, camera, renderer } = createScene(canvas, CONFIG.camera.fov);
 
-  // Orbit controls
-  const controls = new OrbitControls(camera, renderer.domElement);
   controls.enablePan = false;
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
@@ -42,13 +71,11 @@ async function init() {
   controls.minPolarAngle = 0;
   controls.maxPolarAngle = Math.PI / 1.8;
 
-  // Set camera start position
-  camera.position.set(0, CONFIG.camera.positionY, CONFIG.camera.positionZ);
+  camera.position.set(0, modelConfig.cameraHeight, modelConfig.cameraDistance);
   camera.lookAt(0, CONFIG.camera.lookAtY, 0);
   controls.target.set(0, CONFIG.camera.lookAtY, 0);
   controls.update();
 
-  // Responsive rendering
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   window.addEventListener('resize', onWindowResize);
   function onWindowResize() {
@@ -59,26 +86,33 @@ async function init() {
     renderer.setSize(width, height);
   }
 
-  // Load model with cache-buster
   const cacheBuster = `?v=${Date.now()}`;
   console.log(`Loading model from: ${modelPath}`);
   const { model, mixer, clips, morphTargets, bones } =
-    await loadModel(scene, modelPath + cacheBuster, CONFIG.model.heightM);
+    await loadModel(scene, modelPath + cacheBuster, modelConfig.heightM);
 
-  // Apply manual floor offset to model
-  model.position.y += CONFIG.model.floorOffsetY;
+  model.position.y += modelConfig.floorOffsetY;
+  if (modelConfig.scale !== 1.0) {
+    model.scale.multiplyScalar(modelConfig.scale);
+  }
 
-  // Add floor
-  addFloor(scene, CONFIG.floor);
+  const floorCfg = {
+    ...CONFIG.floor,
+    color: modelConfig.floorColor,
+    ringColor: modelConfig.ringColor
+  };
+  addFloor(scene, floorCfg);
 
-  // Controllers
   const animController = new AnimationController(mixer, clips, bones);
   animController.setMorphTargets(morphTargets);
+  animController.headBobIntensity = animConfig.headBobIntensity;
 
   const lipSync = new LipSync(morphTargets, bones);
   const aiController = new AIController(animController, lipSync, characterSheet);
+  
+  aiController.ttsVoice = voiceConfig;
+  aiController.headBobIntensity = animConfig.headBobIntensity;
 
-  // Load character facts from character sheet
   if (characterSheet?.facts && characterSheet.facts.length > 0) {
     const characterName = characterSheet.identity?.name || 'unknown';
     for (const fact of characterSheet.facts) {
@@ -93,7 +127,6 @@ async function init() {
     console.log(`Loaded ${characterSheet.facts.length} character facts for ${characterName}`);
   }
 
-  // Update page title and input placeholder with character name
   const avatarName = characterSheet?.identity?.name || CONFIG.avatar.name;
   document.title = avatarName;
   const promptInput = document.getElementById('aiPrompt');
@@ -101,7 +134,6 @@ async function init() {
     promptInput.placeholder = `Talk to ${avatarName}...`;
   }
 
-  // Expose global for debugging and model switching
   window.avatar = { 
     animController, 
     lipSync, 
@@ -109,7 +141,6 @@ async function init() {
     modelManager
   };
 
-  // Render loop
   const clock = new THREE.Clock();
   function animate() {
     requestAnimationFrame(animate);
@@ -122,7 +153,6 @@ async function init() {
 }
 
 function addFloor(scene, cfg) {
-  // Floor disc
   const floor = new THREE.Mesh(
     new THREE.CircleGeometry(cfg.radius, 64),
     new THREE.MeshStandardMaterial({
@@ -136,7 +166,6 @@ function addFloor(scene, cfg) {
   floor.receiveShadow = true;
   scene.add(floor);
 
-  // Glow ring
   const ring = new THREE.Mesh(
     new THREE.RingGeometry(cfg.ringInner, cfg.ringOuter, 64),
     new THREE.MeshBasicMaterial({

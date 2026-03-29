@@ -146,6 +146,78 @@ export const CHARACTER_SCHEMA = {
         }
       }
     },
+
+    model: {
+      type: "object",
+      description: "Model-specific configuration (overrides config.js defaults)",
+      properties: {
+        floorOffsetY: {
+          type: "number",
+          description: "Vertical offset to place feet on floor",
+          default: 0.85
+        },
+        heightM: {
+          type: "number",
+          description: "Expected model height in meters (for auto-scaling)",
+          default: 1.75
+        },
+        scale: {
+          type: "number",
+          description: "Additional scale multiplier",
+          default: 1.0
+        },
+        cameraDistance: {
+          type: "number",
+          description: "Camera Z position",
+          default: 3.5
+        },
+        cameraHeight: {
+          type: "number",
+          description: "Camera Y position",
+          default: 1.0
+        },
+        floorColor: {
+          type: "integer",
+          description: "Floor color as hex number (e.g., 0x333344)",
+          default: 0x333344
+        },
+        ringColor: {
+          type: "integer",
+          description: "Ring glow color as hex number (e.g., 0x66aaff)",
+          default: 0x66aaff
+        }
+      }
+    },
+
+    voice: {
+      type: "string",
+      description: "Kokoro TTS voice preset",
+      default: "af_sarah"
+    },
+
+    animation: {
+      type: "object",
+      description: "Animation configuration",
+      properties: {
+        headBobIntensity: {
+          type: "number",
+          minimum: 0,
+          maximum: 1,
+          description: "Head bob intensity during speech",
+          default: 0.8
+        },
+        defaultAnimation: {
+          type: "string",
+          description: "Default idle animation name",
+          default: "Idle"
+        },
+        blinkRate: {
+          type: "integer",
+          description: "Blink interval in milliseconds",
+          default: 4000
+        }
+      }
+    },
     
     facts: {
       type: "array",
