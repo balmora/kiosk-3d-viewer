@@ -172,8 +172,15 @@ logger.info('TTS URLs configured:', { tts: this.ttsUrl, stream: this.kokoroUrl }
       return;
     }
 
+    // Synthetic touch before warmup
+    document.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    
     logger.info('TTS warmup...');
     await warmupKokoro('Loading', this.ttsVoice, this.ttsUrl);
+    
+    // Synthetic touch after warmup
+    document.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    
     logger.info('TTS warmup complete');
   }
 
