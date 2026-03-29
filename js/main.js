@@ -63,6 +63,7 @@ async function init() {
   const canvas = document.getElementById('viewer');
   const { scene, camera, renderer } = createScene(canvas, CONFIG.camera.fov);
 
+  const controls = new OrbitControls(camera, renderer.domElement);
   controls.enablePan = false;
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
