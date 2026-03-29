@@ -12,13 +12,25 @@ import { modelManager }        from './ModelManager.js';
 function getModelConfig(characterSheet) {
   const model = characterSheet?.model || {};
   return {
-    floorOffsetY: typeof model.floorOffsetY === 'number' ? model.floorOffsetY : CONFIG.model.floorOffsetY,
+    // Model size and scaling
     heightM: typeof model.heightM === 'number' ? model.heightM : CONFIG.model.heightM,
     scale: typeof model.scale === 'number' ? model.scale : 1.0,
+    
+    // Model vertical position (feet on floor)
+    floorOffsetY: typeof model.floorOffsetY === 'number' ? model.floorOffsetY : CONFIG.model.floorOffsetY,
+    
+    // Camera
     cameraDistance: typeof model.cameraDistance === 'number' ? model.cameraDistance : CONFIG.camera.positionZ,
     cameraHeight: typeof model.cameraHeight === 'number' ? model.cameraHeight : CONFIG.camera.positionY,
+    
+    // Floor circle
+    floorOffsetY_pos: typeof model.floorOffsetY_pos === 'number' ? model.floorOffsetY_pos : CONFIG.floor.offsetY,
+    floorRadius: typeof model.floorRadius === 'number' ? model.floorRadius : CONFIG.floor.radius,
     floorColor: typeof model.floorColor === 'number' ? model.floorColor : CONFIG.floor.color,
-    ringColor: typeof model.ringColor === 'number' ? model.ringColor : CONFIG.floor.ringColor
+    ringInner: typeof model.ringInner === 'number' ? model.ringInner : CONFIG.floor.ringInner,
+    ringOuter: typeof model.ringOuter === 'number' ? model.ringOuter : CONFIG.floor.ringOuter,
+    ringColor: typeof model.ringColor === 'number' ? model.ringColor : CONFIG.floor.ringColor,
+    ringOpacity: typeof model.ringOpacity === 'number' ? model.ringOpacity : CONFIG.floor.ringOpacity,
   };
 }
 
@@ -100,7 +112,12 @@ async function init() {
   const floorCfg = {
     ...CONFIG.floor,
     color: modelConfig.floorColor,
-    ringColor: modelConfig.ringColor
+    ringColor: modelConfig.ringColor,
+    ringInner: modelConfig.ringInner,
+    ringOuter: modelConfig.ringOuter,
+    ringOpacity: modelConfig.ringOpacity,
+    radius: modelConfig.floorRadius,
+    offsetY: modelConfig.floorOffsetY_pos,
   };
   addFloor(scene, floorCfg);
 

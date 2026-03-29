@@ -155,11 +155,6 @@ export const CHARACTER_SCHEMA = {
           type: "string",
           description: "Model filename (e.g., 'Luna.gltf') - defaults to folder name if not specified"
         },
-        floorOffsetY: {
-          type: "number",
-          description: "Vertical offset to place feet on floor",
-          default: 0.85
-        },
         heightM: {
           type: "number",
           description: "Expected model height in meters (for auto-scaling)",
@@ -167,28 +162,63 @@ export const CHARACTER_SCHEMA = {
         },
         scale: {
           type: "number",
-          description: "Additional scale multiplier",
+          description: "Additional scale multiplier (e.g., 1.0 = original, 0.5 = half size)",
           default: 1.0
         },
-        cameraDistance: {
+        // --- MODEL POSITIONING ---
+        // Controls where the 3D model is placed in the scene
+        floorOffsetY: {
           type: "number",
-          description: "Camera Z position",
-          default: 3.5
+          description: "Height offset to place model's feet ON the floor circle. Increase if feet sink, decrease if floating.",
+          default: 0.85
         },
-        cameraHeight: {
+        // --- FLOOR CIRCLE SETTINGS ---
+        // Controls the appearance of the circular floor under the model
+        floorOffsetY_pos: {
           type: "number",
-          description: "Camera Y position",
+          description: "Y position of the floor circle itself (usually 0.0, negative = below ground)",
+          default: 0.0
+        },
+        floorRadius: {
+          type: "number",
+          description: "Radius of the floor circle (size). 1.0 = default, larger = bigger circle",
           default: 1.0
         },
         floorColor: {
           type: "integer",
-          description: "Floor color as hex number (e.g., 0x333344)",
+          description: "Floor circle color as hex number (e.g., 0x333344 = dark blue-gray)",
           default: 0x333344
+        },
+        ringInner: {
+          type: "number",
+          description: "Inner radius of the glowing ring effect",
+          default: 0.4
+        },
+        ringOuter: {
+          type: "number",
+          description: "Outer radius of the glowing ring effect",
+          default: 0.45
         },
         ringColor: {
           type: "integer",
-          description: "Ring glow color as hex number (e.g., 0x66aaff)",
+          description: "Ring glow color as hex number (e.g., 0x66aaff = blue glow)",
           default: 0x66aaff
+        },
+        ringOpacity: {
+          type: "number",
+          description: "Ring transparency (0 = invisible, 1 = fully opaque)",
+          default: 0.8
+        },
+        // --- CAMERA SETTINGS ---
+        cameraDistance: {
+          type: "number",
+          description: "How far camera is from model (Z axis)",
+          default: 3.5
+        },
+        cameraHeight: {
+          type: "number",
+          description: "Camera height (Y axis)",
+          default: 1.0
         }
       }
     },
