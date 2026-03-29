@@ -1,4 +1,4 @@
-// aiController.js v6
+// aiController.js v7
 import { ChatMemory } from './ChatMemory.js?v=2';
 import * as THREE from 'three';
 import { cleanTextForTTS, speakWithKokoroRaw, speakWithBrowser } from './ttsCommon.js';
@@ -136,7 +136,7 @@ logger.info('TTS URLs configured:', { tts: this.ttsUrl, stream: this.kokoroUrl }
   //  TTS CHECK
   // ==================================================
 
-    async _checkTTS() {
+  async _checkTTS() {
     logger.info('Checking TTS server...');
     try {
       const response = await fetchWithTimeout('http://localhost:8000/health', {}, 3000);
@@ -145,6 +145,7 @@ logger.info('TTS URLs configured:', { tts: this.ttsUrl, stream: this.kokoroUrl }
 
       if (data.status === 'ok') {
         this.ttsReady = true;
+        this.ttsModel = data.model;
         logger.info('OK TTS ready:', data.model);
       } else {
         this.ttsReady = false;
@@ -154,6 +155,26 @@ logger.info('TTS URLs configured:', { tts: this.ttsUrl, stream: this.kokoroUrl }
       this.ttsReady = false;
       logger.warn('⚠️ TTS not available - using browser TTS');
       logger.error('TTS error:', e.name, e.message);
+    }
+  }
+
+  // ==================================================
+  //  TTS WARMUP
+  // ==================================================
+
+  async _warmupTTS() {
+    if (!this.ttsReady) {
+      logger.info('TTS not ready, skipping warmup');
+      return;
+    }
+
+    logger.info('Warming up TTS...');
+    const warmupText = 'Hello';
+    try {
+      await speakWithKokoroRaw(warmupText, this.ttsVoice, this.ttsUrl);
+      logger.info('TTS warmup complete');
+    } catch (e) {
+      logger.warn('TTS warmup failed (will retry on first speak):', e.message);
     }
   }
 
@@ -357,10 +378,12 @@ Important: Output ONLY the JSON object, no other text.`;
     }
 
     await this._unlockAudio();
-    logger.info('Audio unlocked, proceeding to greet...');
+    logger.info('Audio unlocked');
 
-    // Small delay to ensure audio context is fully ready
-    setTimeout(() => this._greetUser(), 300);
+    await this._warmupTTS();
+    logger.info('TTS warmup done, proceeding to greet...');
+
+    this._greetUser();
   }
 
   async _unlockAudio() {
