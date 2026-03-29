@@ -24,6 +24,7 @@ export class ModelManager {
     this.currentCharacterSheet = null;
     this.modelPath = null;
     this.storageKey = 'kiosk_selected_model';
+    this.characterSheetCache = new Map(); // Cache to avoid repeated fetches
   }
 
   /**
@@ -54,25 +55,32 @@ export class ModelManager {
   async discoverModels() {
     logger.info('Discovering available models...');
     
-    const models = [];
-    
     // Hardcoded list of expected model names - add your models here
     const possibleNames = ['Luna', '2B'];
     
-    for (const name of possibleNames) {
-      const modelInfo = await this._checkModel(name);
-      if (modelInfo) {
-        models.push(modelInfo);
-      }
+    // Run all model checks in parallel with overall timeout
+    const overallTimeout = 15000; // 15 second total timeout for all discovery
+    
+    try {
+      const results = await Promise.race([
+        Promise.all(possibleNames.map(name => this._checkModel(name))),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Discovery timeout')), overallTimeout))
+      ]);
+      
+      const models = results.filter(Boolean);
+      
+      // Sort by priority (lower number = higher priority)
+      models.sort((a, b) => (a.priority || 999) - (b.priority || 999));
+      
+      this.models = models;
+      logger.info(`Found ${models.length} model(s):`, models.map(m => m.name).join(', '));
+      
+      return models;
+    } catch (e) {
+      logger.error('Model discovery error:', e.message);
+      // Return whatever models we have so far
+      return this.models;
     }
-    
-    // Sort by priority (lower number = higher priority)
-    models.sort((a, b) => (a.priority || 999) - (b.priority || 999));
-    
-    this.models = models;
-    logger.info(`Found ${models.length} model(s):`, models.map(m => m.name).join(', '));
-    
-    return models;
   }
 
   /**
@@ -141,17 +149,21 @@ export class ModelManager {
   }
 
   /**
-   * Load character sheet from model's folder
+   * Load character sheet from model's folder (with caching)
    */
   async _loadCharacterSheet(modelName) {
+    // Check cache first
+    if (this.characterSheetCache.has(modelName)) {
+      return this.characterSheetCache.get(modelName);
+    }
+    
     const charPath = `./models/${modelName}/character.json`;
-    const cacheBuster = Date.now();
     
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 5000);
       
-      const response = await fetch(`${charPath}?v=${cacheBuster}`, {
+      const response = await fetch(charPath, {
         signal: controller.signal
       });
       
@@ -160,6 +172,8 @@ export class ModelManager {
       if (response.ok) {
         const sheet = await response.json();
         logger.info(`Loaded character sheet for ${sheet.identity?.name || modelName}`);
+        // Cache for future use
+        this.characterSheetCache.set(modelName, sheet);
         return sheet;
       }
     } catch (e) {
@@ -170,6 +184,8 @@ export class ModelManager {
       }
     }
     
+    // Cache null results too to avoid repeated failed fetches
+    this.characterSheetCache.set(modelName, null);
     return null;
   }
 
