@@ -1154,6 +1154,8 @@ Important: Output ONLY the JSON object, no other text.`;
 
       if (fullText) {
         this._addToHistory('assistant', fullText);
+        // Parse AI response for triggered actions (outfit changes, etc.)
+        this._parseAIResponseForActions(fullText);
       }
 
       const totalTime = Date.now() - startTime;
@@ -1189,6 +1191,8 @@ Important: Output ONLY the JSON object, no other text.`;
     const response    = await this._askOllama(text);
 
     this._addToHistory('assistant', response);
+    // Parse AI response for triggered actions (outfit changes, etc.)
+    this._parseAIResponseForActions(response);
 
     thinkBubble.remove();
     await this._execute(intent, response);
@@ -1682,6 +1686,58 @@ IMPORTANT RULES:
       return "Oh no, I cannot connect right now, please check my brain is running.";
     }
     return "I am sorry, I got confused there, can you say that again?";
+  }
+
+  // ==================================================
+  //  AI RESPONSE PARSING - detect and execute AI-triggered actions
+  // ==================================================
+
+  _parseAIResponseForActions(responseText) {
+    if (!this.visibilityManager) return;
+    
+    const lower = responseText.toLowerCase();
+    
+    // Patterns that indicate the AI has decided to change outfits
+    const outfitPatterns = [
+      // "attire engaged" or "outfit changed" patterns
+      { regex: /(?:attire|outfit|dress|clothing)\s+(?:engaged|changed|activated|switched)/i, type: 'attire' },
+      // "wearing" patterns - "now wearing casual" or "I'm wearing formal"
+      { regex: /(?:now\s+)?(?:wearing|changed?\s+(?:into|to)|dressed?\s+(?:in|as))\s+(.+?)(?:\.|$)/i, type: 'wear' },
+      // "switched to" patterns
+      { regex: /switched?\s+(?:to\s+)?(.+?)(?:\s+attire|\s+outfit|\.|$)/i, type: 'wear' },
+      // "changed into" patterns
+      { regex: /changed?\s+(?:into\s+)?(.+?)(?:\s+attire|\s+outfit|\.|$)/i, type: 'wear' },
+    ];
+    
+    for (const pattern of outfitPatterns) {
+      const match = responseText.match(pattern.regex);
+      if (match) {
+        let outfitName = '';
+        
+        if (pattern.type === 'attire') {
+          // For attire patterns, try to extract the outfit name
+          // "casual attire engaged" -> "casual"
+          // "formal dress engaged" -> "formal"
+          const attireMatch = lower.match(/(\w+)\s+(?:attire|dress|outfit|clothing)\s+(?:engaged|changed|activated|switched)/);
+          if (attireMatch) {
+            outfitName = attireMatch[1];
+          }
+        } else if (pattern.type === 'wear' && match[1]) {
+          outfitName = match[1].trim();
+          // Remove any leading "a" or "the"
+          outfitName = outfitName.replace(/^(a|the)\s+/i, '').trim();
+        }
+        
+        if (outfitName && this.visibilityManager.hasOutfit(outfitName)) {
+          // Only change if not already wearing this outfit
+          if (this.visibilityManager.getCurrentOutfit() !== outfitName) {
+            logger.info(`AI triggered outfit change to: ${outfitName}`);
+            this.visibilityManager.switchOutfit(outfitName);
+          }
+          return; // Only process the first match
+        }
+      }
+    }
   }
 
   // ==================================================
