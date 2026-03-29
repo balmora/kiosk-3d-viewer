@@ -130,10 +130,10 @@ export class SettingsUI {
     modelSelect.addEventListener('change', async (e) => {
       const selectedModel = e.target.value;
       if (selectedModel && selectedModel !== currentModel?.name) {
-        const response = await this.aiController._handleModelSwitch(selectedModel);
-        this.aiController._addToHistory('assistant', response);
-        this.aiController._updateHistoryPanel();
-        await this.aiController._speak(response);
+        // Save the model preference first
+        if (window.avatar?.modelManager) {
+          await window.avatar.modelManager.loadModel(selectedModel);
+        }
         
         // Reload the page to fully reset everything
         window.location.reload();

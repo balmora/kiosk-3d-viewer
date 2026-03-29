@@ -1202,29 +1202,15 @@ Important: Output ONLY the JSON object, no other text.`;
       return `I don't know ${modelName}. Available models: ${modelList || 'none'}.`;
     }
     
-    // Trigger model switch
-    // This will be handled by the model switching system
+    // Save the model preference
     if (window.avatar?.modelManager) {
       try {
         await window.avatar.modelManager.loadModel(modelName);
         
-        // Update UI
-        const newCharacterSheet = window.avatar.modelManager.getCurrentCharacterSheet();
-        const newAvatarName = newCharacterSheet?.identity?.name || modelName;
+        // Reload the page to switch models
+        window.location.reload();
         
-        document.title = newAvatarName;
-        const promptInput = document.getElementById('aiPrompt');
-        if (promptInput) {
-          promptInput.placeholder = `Talk to ${newAvatarName}...`;
-        }
-        
-        // Reinitialize AIController with new character
-        // For now, just update the name
-        this.avatarName = newAvatarName;
-        this.characterSheet = newCharacterSheet;
-        this.systemPrompt = this._buildCharacterPrompt(newAvatarName);
-        
-        return `Switching to ${newAvatarName}... Give me a moment!`;
+        return `Switching to ${modelName}... Give me a moment!`;
       } catch (e) {
         logger.error('Model switch failed:', e);
         return `Sorry, I couldn't switch to ${modelName}.`;
