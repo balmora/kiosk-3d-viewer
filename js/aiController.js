@@ -325,32 +325,42 @@ Important: Output ONLY the JSON object, no other text.`;
     const events = ['click', 'keydown', 'touchstart', 'mousedown'];
     let triggered = false;
 
-    const triggerInteraction = () => {
+    const onInteraction = () => {
       if (triggered) return;
       triggered = true;
-      logger.info('User interaction detected');
-      events.forEach(e => document.removeEventListener(e, onInteraction));
+      logger.info('User interaction detected via event');
+      this._handleInteraction();
+    };
 
-      const overlay = document.getElementById('startOverlay');
-      if (overlay) {
-        overlay.style.transition = 'opacity 0.5s ease';
-        overlay.style.opacity    = '0';
-        setTimeout(() => overlay.remove(), 500);
+    // Set up event listeners first
+    events.forEach(e => document.addEventListener(e, onInteraction, { once: true }));
+
+    // Auto-trigger as fallback after delay
+    setTimeout(() => {
+      if (!triggered) {
+        triggered = true;
+        logger.info('Auto-triggering interaction (fallback)');
+        events.forEach(e => document.removeEventListener(e, onInteraction));
+        this._handleInteraction();
       }
+    }, 3000);
+  }
 
-      this._unlockAudio().then(() => {
-        setTimeout(() => this._greetUser(), 500);
-      });
-    };
+  async _handleInteraction() {
+    logger.info('_handleInteraction called');
 
-    // Auto-trigger after a short delay
-    setTimeout(triggerInteraction, 1000);
+    const overlay = document.getElementById('startOverlay');
+    if (overlay) {
+      overlay.style.transition = 'opacity 0.5s ease';
+      overlay.style.opacity = '0';
+      setTimeout(() => overlay.remove(), 500);
+    }
 
-    const onInteraction = () => {
-      triggerInteraction();
-    };
+    await this._unlockAudio();
+    logger.info('Audio unlocked, proceeding to greet...');
 
-    events.forEach(e => document.addEventListener(e, onInteraction, { once: false }));
+    // Small delay to ensure audio context is fully ready
+    setTimeout(() => this._greetUser(), 300);
   }
 
   async _unlockAudio() {
@@ -662,20 +672,26 @@ Important: Output ONLY the JSON object, no other text.`;
   // ==================================================
 
   async _greetUser() {
+    logger.info('_greetUser called');
     logger.info('Generating greeting...');
     logger.info('Visit count:', this.userInfo.visitCount);
     logger.info('User name:', this.userInfo.name);
 
     const greetingPrompt = this._buildGreetingPrompt();
-    const thinkBubble    = this._showThinkingBubble();
-    const greeting       = await this._askOllamaGreeting(greetingPrompt);
+    const thinkBubble = this._showThinkingBubble();
 
-    thinkBubble.remove();
-
-    logger.info('Greeting:', greeting);
-
-    this._saveHistory();
-    this._executeGreeting(greeting);
+    try {
+      const greeting = await this._askOllamaGreeting(greetingPrompt);
+      thinkBubble.remove();
+      logger.info('Greeting:', greeting);
+      this._saveHistory();
+      this._executeGreeting(greeting);
+    } catch (error) {
+      logger.error('Greeting generation failed:', error.message);
+      thinkBubble.remove();
+      const fallback = this._fallbackGreeting();
+      this._executeGreeting(fallback);
+    }
   }
 
   _buildGreetingPrompt() {
@@ -787,7 +803,11 @@ Important: Output ONLY the JSON object, no other text.`;
   }
 
   async _executeGreeting(responseText) {
-    if (this.isSpeaking || this.isProcessing) return;
+    logger.info('_executeGreeting called. isSpeaking:', this.isSpeaking, 'isProcessing:', this.isProcessing);
+    if (this.isSpeaking || this.isProcessing) {
+      logger.warn('Skipping greeting - already speaking or processing');
+      return;
+    }
     this.isSpeaking = true;
 
     logger.info('Speaking greeting:', responseText);
