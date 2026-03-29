@@ -168,12 +168,7 @@ logger.info('TTS URLs configured:', { tts: this.ttsUrl, stream: this.kokoroUrl }
     }
 
     logger.info('Background TTS warmup...');
-    const warmupTexts = ['Hello', 'Testing audio', 'Ready'];
-
-    for (const text of warmupTexts) {
-      await warmupKokoro(text, this.ttsVoice, this.ttsUrl);
-      await new Promise(r => setTimeout(r, 300));
-    }
+    await warmupKokoro('Loading', this.ttsVoice, this.ttsUrl);
     logger.info('Background TTS warmup complete');
   }
 
