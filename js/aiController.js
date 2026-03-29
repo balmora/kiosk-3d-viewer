@@ -1,7 +1,7 @@
-// aiController.js v9
+// aiController.js v10
 import { ChatMemory } from './ChatMemory.js?v=2';
 import * as THREE from 'three';
-import { cleanTextForTTS, speakWithKokoroRaw, speakWithBrowser, warmupKokoro } from './ttsCommon.js?v=3';
+import { cleanTextForTTS, speakWithKokoroRaw, speakWithBrowser, warmupKokoro } from './ttsCommon.js?v=4';
 import { fetchWithTimeout, fetchWithRetry } from './utils.js';
 import { CONFIG, getTtsUrls } from './config.js?v=2';
 import { SettingsUI } from './settingsUI.js';
@@ -16,6 +16,11 @@ export class AIController {
     this.isSpeaking     = false;
     this.isProcessing   = false;
     this.messageQueue   = [];
+    this.skipWarmup     = sessionStorage.getItem('kiosk_kokoro_warm') === 'true';
+    if (this.skipWarmup) {
+      sessionStorage.removeItem('kiosk_kokoro_warm');
+      logger.info('Skipping warmup (model was just switched)');
+    }
 
     // Character sheet (optional - for custom personality)
     this.characterSheet = characterSheet;
@@ -372,11 +377,19 @@ Important: Output ONLY the JSON object, no other text.`;
     }
 
     await this._unlockAudio();
-    logger.info('Audio unlocked, warming up TTS...');
+    logger.info('Audio unlocked');
 
-    await this._warmupTTS();
-    logger.info('TTS warmup done, greeting...');
+    // Skip warmup if switching models (Kokoro stays loaded)
+    if (this.skipWarmup) {
+      logger.info('Skipping warmup (model switch)');
+      this.skipWarmup = false;
+    } else {
+      logger.info('TTS warmup...');
+      await this._warmupTTS();
+      logger.info('TTS warmup done');
+    }
 
+    logger.info('Greeting...');
     this._greetUser();
   }
 
@@ -1253,6 +1266,9 @@ Important: Output ONLY the JSON object, no other text.`;
     if (window.avatar?.modelManager) {
       try {
         await window.avatar.modelManager.loadModel(modelName);
+        
+        // Mark that Kokoro is already warm for next load
+        sessionStorage.setItem('kiosk_kokoro_warm', 'true');
         
         // Reload the page to switch models
         window.location.reload();

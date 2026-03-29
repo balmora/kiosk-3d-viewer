@@ -142,10 +142,6 @@ async function init() {
     modelManager
   };
 
-  // Trigger browser audio policy
-  const sendBtn = document.getElementById('aiSend');
-  sendBtn?.click();
-
   const clock = new THREE.Clock();
   function animate() {
     requestAnimationFrame(animate);
