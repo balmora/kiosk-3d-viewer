@@ -7,6 +7,7 @@ import { AnimationController } from './animationController.js';
 import { LipSync }             from './lipSync.js';
 import { AIController }        from './aiController.js';
 import { VisibilityManager }   from './VisibilityManager.js';
+import { commandExecutor }      from './commandExecutor.js';
 import { CONFIG }              from './config.js';
 import { modelManager }        from './ModelManager.js';
 
