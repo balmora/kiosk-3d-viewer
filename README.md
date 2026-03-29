@@ -65,12 +65,32 @@ Type in the chat box to talk to Luna, or use these commands:
 
 ---
 
+## Updating
+
+To get the latest features and bug fixes:
+
+1. Make sure the kiosk is not running
+2. Double-click **`update.py`**
+3. Read the messages and press Enter when done
+4. Restart the kiosk with **`start.py`**
+
+The update script will:
+- Show current vs remote version
+- List changed files
+- Handle local changes (offer to stash)
+- Pull latest from GitHub
+
+> **Note:** Your model files (`.glb`, `.gltf`) and local settings are preserved during updates.
+
+---
+
 ## Project Structure
 ```bash
 kiosk-3d-viewer/
 ├── index.html
 ├── setup.py ← run this first
 ├── start.py ← run to launch
+├── update.py ← update from GitHub
 ├── push.py ← git push helper
 ├── kokoro_server.py ← TTS server
 ├── .gitignore
