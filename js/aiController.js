@@ -323,8 +323,11 @@ Important: Output ONLY the JSON object, no other text.`;
   _waitForInteraction() {
     logger.info('Waiting for user interaction...');
     const events = ['click', 'keydown', 'touchstart', 'mousedown'];
+    let triggered = false;
 
-    const onInteraction = () => {
+    const triggerInteraction = () => {
+      if (triggered) return;
+      triggered = true;
       logger.info('User interaction detected');
       events.forEach(e => document.removeEventListener(e, onInteraction));
 
@@ -338,6 +341,13 @@ Important: Output ONLY the JSON object, no other text.`;
       this._unlockAudio().then(() => {
         setTimeout(() => this._greetUser(), 500);
       });
+    };
+
+    // Auto-trigger after a short delay
+    setTimeout(triggerInteraction, 1000);
+
+    const onInteraction = () => {
+      triggerInteraction();
     };
 
     events.forEach(e => document.addEventListener(e, onInteraction, { once: false }));
