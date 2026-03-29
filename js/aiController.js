@@ -159,7 +159,7 @@ logger.info('TTS URLs configured:', { tts: this.ttsUrl, stream: this.kokoroUrl }
   }
 
   // ==================================================
-  //  TTS WARMUP (called after greeting for subsequent messages)
+  //  TTS WARMUP
   // ==================================================
 
   async _warmupTTS() {
@@ -167,15 +167,9 @@ logger.info('TTS URLs configured:', { tts: this.ttsUrl, stream: this.kokoroUrl }
       return;
     }
 
-    logger.info('Background TTS warmup...');
+    logger.info('TTS warmup...');
     await warmupKokoro('Loading', this.ttsVoice, this.ttsUrl);
-    logger.info('Background TTS warmup complete');
-  }
-
-  async _postGreetingWarmup() {
-    setTimeout(() => {
-      this._warmupTTS();
-    }, 1000);
+    logger.info('TTS warmup complete');
   }
 
   // ==================================================
@@ -378,7 +372,10 @@ Important: Output ONLY the JSON object, no other text.`;
     }
 
     await this._unlockAudio();
-    logger.info('Audio unlocked, proceeding to greet...');
+    logger.info('Audio unlocked, warming up TTS...');
+
+    await this._warmupTTS();
+    logger.info('TTS warmup done, greeting...');
 
     this._greetUser();
   }
@@ -850,9 +847,6 @@ Important: Output ONLY the JSON object, no other text.`;
     this.animController.stopHeadBob();
     bubble.remove();
     this.isSpeaking = false;
-
-    // Background warmup for subsequent messages
-    this._postGreetingWarmup();
 
     // OK Process any queued messages
     await this._processQueue();
