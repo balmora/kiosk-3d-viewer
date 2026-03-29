@@ -51,7 +51,12 @@ document.title = CONFIG.avatar.name;
 
 async function init() {
   console.log('Discovering models...');
-  await modelManager.discoverModels();
+  try {
+    await modelManager.discoverModels();
+  } catch (e) {
+    console.error('Model discovery failed:', e);
+    return;
+  }
   
   const defaultModel = modelManager.getDefaultModel();
   if (!defaultModel) {

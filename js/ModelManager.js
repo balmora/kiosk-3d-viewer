@@ -83,13 +83,21 @@ export class ModelManager {
     
     // First, load character sheet to check for explicit filename
     const characterSheet = await this._loadCharacterSheet(name);
+    if (!characterSheet) {
+      logger.warn(`Model "${name}": No character sheet, skipping`);
+      return null;
+    }
+    
     const filename = characterSheet?.model?.filename;
     
     // If character sheet specifies a filename, try that first
     if (filename) {
       const modelPath = `${basePath}/${filename}`;
       try {
-        const response = await fetch(modelPath, { method: 'HEAD' });
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
+        const response = await fetch(modelPath, { method: 'HEAD', signal: controller.signal });
+        clearTimeout(timeout);
         if (response.ok) {
           return {
             name: name,
@@ -101,7 +109,7 @@ export class ModelManager {
           };
         }
       } catch (e) {
-        // Model not found at this path
+        logger.debug(`Model not found at ${modelPath}: ${e.message}`);
       }
     }
     
@@ -110,7 +118,10 @@ export class ModelManager {
     for (const ext of extensions) {
       const modelPath = `${basePath}/${name}${ext}`;
       try {
-        const response = await fetch(modelPath, { method: 'HEAD' });
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
+        const response = await fetch(modelPath, { method: 'HEAD', signal: controller.signal });
+        clearTimeout(timeout);
         if (response.ok) {
           return {
             name: name,
@@ -122,7 +133,7 @@ export class ModelManager {
           };
         }
       } catch (e) {
-        // Model not found at this path
+        logger.debug(`Model not found at ${modelPath}: ${e.message}`);
       }
     }
     
@@ -134,16 +145,29 @@ export class ModelManager {
    */
   async _loadCharacterSheet(modelName) {
     const charPath = `./models/${modelName}/character.json`;
+    const cacheBuster = Date.now();
     
     try {
-      const response = await fetch(`${charPath}?v=${Date.now()}`);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      
+      const response = await fetch(`${charPath}?v=${cacheBuster}`, {
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeout);
+      
       if (response.ok) {
         const sheet = await response.json();
         logger.info(`Loaded character sheet for ${sheet.identity?.name || modelName}`);
         return sheet;
       }
     } catch (e) {
-      logger.debug(`No character sheet found for ${modelName}`);
+      if (e.name === 'AbortError') {
+        logger.warn(`Character sheet fetch timeout for ${modelName}`);
+      } else {
+        logger.debug(`No character sheet found for ${modelName}: ${e.message}`);
+      }
     }
     
     return null;

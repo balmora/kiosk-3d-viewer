@@ -12,9 +12,16 @@ export async function loadModel(scene, modelPath = './models/avatar.gltf') {
 
     const loadingEl = createLoadingIndicator();
 
+    const timeout = setTimeout(() => {
+      console.warn('Model loading timeout - showing placeholder');
+      loadingEl.remove();
+      resolve(createPlaceholder(scene));
+    }, 60000);
+
     loader.load(
       modelPath,
       (gltf) => {
+        clearTimeout(timeout);
         loadingEl.remove();
         const model = gltf.scene;
 
@@ -91,6 +98,7 @@ export async function loadModel(scene, modelPath = './models/avatar.gltf') {
         }
       },
       (error) => {
+        clearTimeout(timeout);
         loadingEl.remove();
         console.error('Model load error:', error);
         const placeholder = createPlaceholder(scene);
