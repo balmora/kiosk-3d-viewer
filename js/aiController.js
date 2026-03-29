@@ -1,4 +1,4 @@
-// aiController.js v7
+// aiController.js v8
 import { ChatMemory } from './ChatMemory.js?v=2';
 import * as THREE from 'three';
 import { cleanTextForTTS, speakWithKokoroRaw, speakWithBrowser } from './ttsCommon.js';
@@ -168,14 +168,23 @@ logger.info('TTS URLs configured:', { tts: this.ttsUrl, stream: this.kokoroUrl }
       return;
     }
 
-    logger.info('Warming up TTS...');
-    const warmupText = 'Hello';
-    try {
-      await speakWithKokoroRaw(warmupText, this.ttsVoice, this.ttsUrl);
-      logger.info('TTS warmup complete');
-    } catch (e) {
-      logger.warn('TTS warmup failed (will retry on first speak):', e.message);
+    logger.info('Warming up TTS (making multiple requests)...');
+    const warmupTexts = ['Hello', 'Hi there', 'Testing'];
+    const delay = ms => new Promise(r => setTimeout(r, ms));
+
+    for (let i = 0; i < warmupTexts.length; i++) {
+      try {
+        logger.info(`TTS warmup request ${i + 1}/${warmupTexts.length}...`);
+        await speakWithKokoroRaw(warmupTexts[i], this.ttsVoice, this.ttsUrl);
+        logger.info(`TTS warmup ${i + 1} complete`);
+        if (i < warmupTexts.length - 1) {
+          await delay(500);
+        }
+      } catch (e) {
+        logger.warn(`TTS warmup ${i + 1} failed:`, e.message);
+      }
     }
+    logger.info('TTS warmup done');
   }
 
   // ==================================================
@@ -381,7 +390,11 @@ Important: Output ONLY the JSON object, no other text.`;
     logger.info('Audio unlocked');
 
     await this._warmupTTS();
-    logger.info('TTS warmup done, proceeding to greet...');
+    logger.info('TTS warmup done, waiting before greet...');
+
+    // Extra delay to ensure Kokoro is fully ready
+    await new Promise(r => setTimeout(r, 1000));
+    logger.info('Ready to greet, calling _greetUser...');
 
     this._greetUser();
   }
@@ -1563,7 +1576,13 @@ IMPORTANT RULES:
 
     if (this.ttsReady) {
       logger.info('Using Kokoro TTS');
-      return this._speakWithKokoro(text);
+      try {
+        return await this._speakWithKokoro(text);
+      } catch (e) {
+        logger.warn('Kokoro failed, falling back to browser TTS:', e.message);
+        this.ttsReady = false;
+        return this._speakWithBrowser(text);
+      }
     } else {
       logger.info('Using browser TTS');
       return this._speakWithBrowser(text);
