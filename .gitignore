@@ -49,5 +49,6 @@ __pycache__/
 # Do not commit planning/notes files
 TASKS.md
 prd.md
+AGENTS.md
 # Exclude entire .claude folder (agent memory, logs)
 .claude/
