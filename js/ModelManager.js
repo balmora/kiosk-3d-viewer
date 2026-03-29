@@ -55,11 +55,9 @@ export class ModelManager {
     logger.info('Discovering available models...');
     
     const models = [];
-    const modelExtensions = ['.gltf', '.glb'];
     
-    // Try to fetch the models folder to list contents
-    // This is a best-effort discovery since we can't list directories in browser
-    const possibleNames = ['Luna', 'Mona', 'Alice', '2B', 'Default'];
+    // Hardcoded list of expected model names - add your models here
+    const possibleNames = ['Luna', '2B'];
     
     for (const name of possibleNames) {
       const modelInfo = await this._checkModel(name);
@@ -90,10 +88,8 @@ export class ModelManager {
     // If character sheet specifies a filename, try that first
     if (filename) {
       const modelPath = `${basePath}/${filename}`;
-      console.log(`Checking model path: ${modelPath}`);
       try {
         const response = await fetch(modelPath, { method: 'HEAD' });
-        console.log(`Response for ${modelPath}: ${response.status} ${response.ok}`);
         if (response.ok) {
           return {
             name: name,
@@ -105,20 +101,16 @@ export class ModelManager {
           };
         }
       } catch (e) {
-        console.error(`Error fetching ${modelPath}:`, e);
+        // Model not found at this path
       }
-    } else {
-      console.log(`No filename specified in character sheet for ${name}`);
     }
     
     // Fall back to guessing filename from folder name
     const extensions = ['.gltf', '.glb'];
     for (const ext of extensions) {
       const modelPath = `${basePath}/${name}${ext}`;
-      console.log(`Checking fallback path: ${modelPath}`);
       try {
         const response = await fetch(modelPath, { method: 'HEAD' });
-        console.log(`Response for ${modelPath}: ${response.status} ${response.ok}`);
         if (response.ok) {
           return {
             name: name,
@@ -130,11 +122,10 @@ export class ModelManager {
           };
         }
       } catch (e) {
-        console.error(`Error fetching ${modelPath}:`, e);
+        // Model not found at this path
       }
     }
     
-    console.log(`No model found for ${name}`);
     return null;
   }
 
