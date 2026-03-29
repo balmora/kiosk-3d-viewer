@@ -6,6 +6,7 @@ import { fetchWithTimeout, fetchWithRetry } from './utils.js';
 import { CONFIG, getTtsUrls } from './config.js?v=2';
 import { SettingsUI } from './settingsUI.js';
 import { logger } from './logger.js';
+import { commandExecutor } from './commandExecutor.js';
 
 logger.info('aiController.js v6 loaded');
 
@@ -53,6 +54,9 @@ logger.info('TTS URLs configured:', { tts: this.ttsUrl, stream: this.kokoroUrl }
 
     // Visibility/Wardrobe manager (optional)
     this.visibilityManager = null;
+
+    // Command executor for system actions
+    this.commandExecutor = commandExecutor;
 
     // Fact extraction debouncing
     this.lastFactExtraction = 0;
@@ -1840,5 +1844,42 @@ async _speakWithBrowser(text) {    return await speakWithBrowser(text, this.zira
       `;
       document.head.appendChild(style);
     }
+  }
+
+  // ==================================================
+  //  SYSTEM COMMANDS (AI-triggered)
+  // ==================================================
+
+  /**
+   * Handle system command requests from AI
+   * @param {string} command - The command to execute (e.g., 'update')
+   * @returns {Object} Result with success status and message
+   */
+  async executeSystemCommand(command) {
+    const cmd = command.toLowerCase().trim();
+    
+    if (cmd === 'update' || cmd === 'update.py') {
+      logger.info('AIController: AI requested system update');
+      const result = await this.commandExecutor.execute('update.py');
+      return {
+        command: 'update',
+        ...result
+      };
+    }
+    
+    return { success: false, error: `Unknown command: ${command}` };
+  }
+
+  /**
+   * Check if user wants to trigger a system command
+   * @param {string} text - User input text
+   * @returns {boolean} True if this is a system command request
+   */
+  isSystemCommandRequest(text) {
+    const lower = text.toLowerCase();
+    return lower.includes('run update') || 
+           lower.includes('update system') ||
+           lower.includes('check for updates') ||
+           lower.includes('apply update');
   }
 }

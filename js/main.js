@@ -176,7 +176,8 @@ async function init() {
     lipSync, 
     aiController,
     modelManager,
-    visibilityManager
+    visibilityManager,
+    commandExecutor
   };
 
   const clock = new THREE.Clock();
