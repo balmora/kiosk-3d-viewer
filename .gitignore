@@ -13,13 +13,8 @@ Thumbs.db
 *.tmp
 *.temp
 
-# Ignore large model files
-models/*.bin
-models/*.glb
-models/*.gltf
-
-# Keep the models folder but ignore large files
-!models/.gitkeep
+# Ignore ALL files in model folders (subfolders are tracked but contents are not)
+models/**/*
 
 # Character sheets are user-specific and should not be committed
 models/character.json
