@@ -82,15 +82,38 @@ export class ModelManager {
    */
   async _checkModel(name) {
     const basePath = `./models/${name}`;
-    const extensions = ['.gltf', '.glb'];
     
+    // First, load character sheet to check for explicit filename
+    const characterSheet = await this._loadCharacterSheet(name);
+    const filename = characterSheet?.model?.filename;
+    
+    // If character sheet specifies a filename, try that first
+    if (filename) {
+      const modelPath = `${basePath}/${filename}`;
+      try {
+        const response = await fetch(modelPath, { method: 'HEAD' });
+        if (response.ok) {
+          return {
+            name: name,
+            displayName: characterSheet?.identity?.name || name,
+            path: modelPath,
+            folder: basePath,
+            characterSheet: characterSheet,
+            priority: characterSheet?.priority || 999
+          };
+        }
+      } catch (e) {
+        logger.warn(`Model file "${filename}" not found in ${name}/`);
+      }
+    }
+    
+    // Fall back to guessing filename from folder name
+    const extensions = ['.gltf', '.glb'];
     for (const ext of extensions) {
       const modelPath = `${basePath}/${name}${ext}`;
       try {
         const response = await fetch(modelPath, { method: 'HEAD' });
         if (response.ok) {
-          // Found the model, now check for character sheet
-          const characterSheet = await this._loadCharacterSheet(name);
           return {
             name: name,
             displayName: characterSheet?.identity?.name || name,

@@ -151,6 +151,10 @@ export const CHARACTER_SCHEMA = {
       type: "object",
       description: "Model-specific configuration (overrides config.js defaults)",
       properties: {
+        filename: {
+          type: "string",
+          description: "Model filename (e.g., 'Luna.gltf') - defaults to folder name if not specified"
+        },
         floorOffsetY: {
           type: "number",
           description: "Vertical offset to place feet on floor",
