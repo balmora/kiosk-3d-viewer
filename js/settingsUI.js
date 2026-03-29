@@ -229,13 +229,203 @@ export class SettingsUI {
     logSelect.addEventListener('change', (e) => {
       this.settings.logLevel = e.target.value;
       this.saveSettings();
-      // Apply immediately if logger is accessible (we'd need to configure globally)
-      // Could dispatch event or have a global logger config
       if (window.logger) {
         window.logger.minLevel = getLogLevel(this.settings.logLevel);
       }
     });
     panel.appendChild(logSelect);
+
+    // Glow/Spot intensity slider
+    const intensityLabel = document.createElement('label');
+    intensityLabel.textContent = 'Glow/Spot Intensity: 0';
+    intensityLabel.style.display = 'block';
+    intensityLabel.style.marginBottom = '4px';
+    intensityLabel.style.color = '#ccc';
+    panel.appendChild(intensityLabel);
+
+    const intensitySlider = document.createElement('input');
+    intensitySlider.type = 'range';
+    intensitySlider.min = 0;
+    intensitySlider.max = 10;
+    intensitySlider.step = 1;
+    intensitySlider.value = 0;
+    intensitySlider.style.width = '100%';
+    intensitySlider.style.marginBottom = '12px';
+    intensitySlider.addEventListener('input', (e) => {
+      const val = parseInt(e.target.value);
+      intensityLabel.textContent = `Glow/Spot Intensity: ${val}`;
+      if (window.avatar?.glowSystem) {
+        window.avatar.glowSystem.setIntensity(val);
+      }
+    });
+    panel.appendChild(intensitySlider);
+
+    // Spot count input
+    const spotLabel = document.createElement('label');
+    spotLabel.textContent = 'Spot Count: 0';
+    spotLabel.style.display = 'block';
+    spotLabel.style.marginBottom = '4px';
+    spotLabel.style.color = '#ccc';
+    panel.appendChild(spotLabel);
+
+    const spotInput = document.createElement('input');
+    spotInput.type = 'number';
+    spotInput.min = 0;
+    spotInput.max = 24;
+    spotInput.value = 0;
+    spotInput.style.width = '100%';
+    spotInput.style.padding = '6px';
+    spotInput.style.marginBottom = '12px';
+    spotInput.style.borderRadius = '4px';
+    spotInput.style.border = '1px solid #ff69b4';
+    spotInput.style.background = '#222';
+    spotInput.style.color = '#fff';
+    spotInput.addEventListener('input', (e) => {
+      const val = parseInt(e.target.value) || 0;
+      spotLabel.textContent = `Spot Count: ${val}`;
+      if (window.avatar?.glowSystem) {
+        window.avatar.glowSystem.setSpotCount(val);
+      }
+    });
+    panel.appendChild(spotInput);
+
+    // Spot direction toggle
+    const directionLabel = document.createElement('label');
+    directionLabel.textContent = 'Spot Direction: Both';
+    directionLabel.style.display = 'block';
+    directionLabel.style.marginBottom = '4px';
+    directionLabel.style.color = '#ccc';
+    panel.appendChild(directionLabel);
+
+    const directionBtn = document.createElement('button');
+    directionBtn.textContent = 'Both';
+    directionBtn.style.width = '100%';
+    directionBtn.style.padding = '6px';
+    directionBtn.style.marginBottom = '12px';
+    directionBtn.style.borderRadius = '4px';
+    directionBtn.style.border = '1px solid #ff69b4';
+    directionBtn.style.background = '#222';
+    directionBtn.style.color = '#fff';
+    directionBtn.style.cursor = 'pointer';
+    directionBtn.addEventListener('click', () => {
+      if (window.avatar?.glowSystem) {
+        const newDir = window.avatar.glowSystem.cycleSpotDirection();
+        directionLabel.textContent = `Spot Direction: ${newDir.charAt(0).toUpperCase() + newDir.slice(1)}`;
+        directionBtn.textContent = newDir.charAt(0).toUpperCase() + newDir.slice(1);
+      }
+    });
+    panel.appendChild(directionBtn);
+
+    // Color picker section
+    const colorLabel = document.createElement('label');
+    colorLabel.textContent = 'Glow/Spot Color:';
+    colorLabel.style.display = 'block';
+    colorLabel.style.marginBottom = '4px';
+    colorLabel.style.color = '#ccc';
+    panel.appendChild(colorLabel);
+
+    const colorBtnContainer = document.createElement('div');
+    colorBtnContainer.style.display = 'flex';
+    colorBtnContainer.style.gap = '6px';
+    colorBtnContainer.style.marginBottom = '8px';
+    colorBtnContainer.style.flexWrap = 'wrap';
+
+    const colorPresets = [
+      { name: 'Cyan', hex: '#33A0A4' },
+      { name: 'Blue', hex: '#3388FF' },
+      { name: 'Purple', hex: '#8833FF' },
+      { name: 'Pink', hex: '#FF33AA' },
+      { name: 'Red', hex: '#FF3333' },
+      { name: 'Green', hex: '#33FF88' },
+    ];
+
+    const presetBtns = [];
+    colorPresets.forEach(preset => {
+      const btn = document.createElement('button');
+      btn.textContent = preset.name;
+      btn.style.flex = '1';
+      btn.style.minWidth = '45px';
+      btn.style.padding = '4px';
+      btn.style.borderRadius = '4px';
+      btn.style.border = '1px solid #ff69b4';
+      btn.style.background = preset.hex;
+      btn.style.color = preset.hex === '#FF33AA' || preset.hex === '#FF3333' ? '#fff' : '#000';
+      btn.style.cursor = 'pointer';
+      btn.style.fontSize = '10px';
+      btn.addEventListener('click', () => {
+        if (window.avatar?.glowSystem) {
+          window.avatar.glowSystem.setColor(preset.hex);
+        }
+        presetBtns.forEach(b => b.style.outline = 'none');
+        btn.style.outline = '2px solid #fff';
+      });
+      presetBtns.push(btn);
+      colorBtnContainer.appendChild(btn);
+    });
+    panel.appendChild(colorBtnContainer);
+
+    // RGB sliders
+    const rgbContainer = document.createElement('div');
+    rgbContainer.style.marginBottom = '12px';
+
+    const createRgbSlider = (channel, color) => {
+      const wrapper = document.createElement('div');
+      wrapper.style.display = 'flex';
+      wrapper.style.alignItems = 'center';
+      wrapper.style.gap = '6px';
+      wrapper.style.marginBottom = '4px';
+
+      const label = document.createElement('span');
+      label.textContent = channel.toUpperCase();
+      label.style.width = '15px';
+      label.style.color = color;
+      label.style.fontWeight = 'bold';
+
+      const slider = document.createElement('input');
+      slider.type = 'range';
+      slider.min = 0;
+      slider.max = 255;
+      slider.value = 0;
+      slider.style.flex = '1';
+      slider.style.accentColor = color;
+
+      const valSpan = document.createElement('span');
+      valSpan.textContent = '0';
+      valSpan.style.width = '30px';
+      valSpan.style.textAlign = 'right';
+      valSpan.style.color = '#888';
+      valSpan.style.fontSize = '11px';
+
+      slider.addEventListener('input', () => {
+        valSpan.textContent = slider.value;
+        updateRgbColor();
+      });
+
+      wrapper.appendChild(label);
+      wrapper.appendChild(slider);
+      wrapper.appendChild(valSpan);
+      return { wrapper, slider };
+    };
+
+    const rgbR = createRgbSlider('r', '#ff6666');
+    const rgbG = createRgbSlider('g', '#66ff66');
+    const rgbB = createRgbSlider('b', '#6666ff');
+
+    rgbContainer.appendChild(rgbR.wrapper);
+    rgbContainer.appendChild(rgbG.wrapper);
+    rgbContainer.appendChild(rgbB.wrapper);
+    panel.appendChild(rgbContainer);
+
+    function updateRgbColor() {
+      const r = parseInt(rgbR.slider.value);
+      const g = parseInt(rgbG.slider.value);
+      const b = parseInt(rgbB.slider.value);
+      const hex = '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
+      if (window.avatar?.glowSystem) {
+        window.avatar.glowSystem.setColor(hex);
+      }
+      presetBtns.forEach(b => b.style.outline = 'none');
+    }
 
     // Close on outside click
     document.addEventListener('click', (e) => {

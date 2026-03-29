@@ -13,18 +13,11 @@ import { modelManager }        from './ModelManager.js';
 function getModelConfig(characterSheet) {
   const model = characterSheet?.model || {};
   return {
-    // Model size and scaling
     heightM: typeof model.heightM === 'number' ? model.heightM : CONFIG.model.heightM,
     scale: typeof model.scale === 'number' ? model.scale : 1.0,
-    
-    // Model vertical position (feet on floor)
     floorOffsetY: typeof model.floorOffsetY === 'number' ? model.floorOffsetY : CONFIG.model.floorOffsetY,
-    
-    // Camera
     cameraDistance: typeof model.cameraDistance === 'number' ? model.cameraDistance : CONFIG.camera.positionZ,
     cameraHeight: typeof model.cameraHeight === 'number' ? model.cameraHeight : CONFIG.camera.positionY,
-    
-    // Floor circle
     floorOffsetY_pos: typeof model.floorOffsetY_pos === 'number' ? model.floorOffsetY_pos : CONFIG.floor.offsetY,
     floorRadius: typeof model.floorRadius === 'number' ? model.floorRadius : CONFIG.floor.radius,
     floorColor: typeof model.floorColor === 'number' ? model.floorColor : CONFIG.floor.color,
@@ -32,6 +25,10 @@ function getModelConfig(characterSheet) {
     ringOuter: typeof model.ringOuter === 'number' ? model.ringOuter : CONFIG.floor.ringOuter,
     ringColor: typeof model.ringColor === 'number' ? model.ringColor : CONFIG.floor.ringColor,
     ringOpacity: typeof model.ringOpacity === 'number' ? model.ringOpacity : CONFIG.floor.ringOpacity,
+    glowColor: model.glowColor || CONFIG.glow.color,
+    glowIntensity: typeof model.glowIntensity === 'number' ? model.glowIntensity : CONFIG.glow.intensity,
+    spotCount: typeof model.spotCount === 'number' ? model.spotCount : CONFIG.spot.count,
+    spotColor: model.spotColor || model.glowColor || CONFIG.spot.color,
   };
 }
 
@@ -74,7 +71,7 @@ async function init() {
   console.log('Animation config:', animConfig);
   
   const canvas = document.getElementById('viewer');
-  const { scene, camera, renderer } = createScene(canvas, CONFIG.camera.fov);
+  const { scene, camera, renderer, glowSystem } = createScene(canvas, CONFIG.camera.fov);
 
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enablePan = false;
@@ -122,6 +119,12 @@ async function init() {
     offsetY: modelConfig.floorOffsetY_pos,
   };
   addFloor(scene, floorCfg);
+
+  glowSystem.setFloorParams(floorCfg.offsetY, floorCfg.radius);
+  glowSystem.setColor(modelConfig.glowColor);
+  glowSystem.setIntensity(modelConfig.glowIntensity);
+  glowSystem.setSpotCount(modelConfig.spotCount);
+  glowSystem.setColor(modelConfig.spotColor);
 
   const animController = new AnimationController(mixer, clips, bones);
   animController.setMorphTargets(morphTargets);
@@ -177,6 +180,7 @@ async function init() {
     aiController,
     modelManager,
     visibilityManager,
+    glowSystem,
     commandExecutor
   };
 
@@ -186,6 +190,7 @@ async function init() {
     const delta = clock.getDelta();
     controls.update();
     animController.update(delta);
+    glowSystem.update(delta);
     renderer.render(scene, camera);
   }
   animate();

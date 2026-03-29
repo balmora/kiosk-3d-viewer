@@ -209,6 +209,32 @@ export const CHARACTER_SCHEMA = {
           description: "Ring transparency (0 = invisible, 1 = fully opaque)",
           default: 0.8
         },
+        // --- GLOW/SPOT LIGHTING ---
+        // Centered glow effect under the model
+        glowColor: {
+          type: "string",
+          description: "Glow color as hex string (e.g., '#33A0A4' = cyan)",
+          default: "#33A0A4"
+        },
+        glowIntensity: {
+          type: "integer",
+          minimum: 0,
+          maximum: 10,
+          description: "Glow intensity: 0=off, 1-3=dim, 4-6=medium pulse, 7-10=fast pulse",
+          default: 0
+        },
+        // Colored spot lights around the floor edge
+        spotCount: {
+          type: "integer",
+          minimum: 0,
+          description: "Number of spot lights around floor edge (0 = off)",
+          default: 0
+        },
+        spotColor: {
+          type: "string",
+          description: "Spot light color as hex string (inherits glowColor if not set)",
+          default: "#33A0A4"
+        },
         // --- CAMERA SETTINGS ---
         cameraDistance: {
           type: "number",

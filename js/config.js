@@ -44,6 +44,18 @@ export const CONFIG = {
     ringOuter: 0.45,
   },
 
+  // Glow/Spot lighting settings
+  glow: {
+    color: 0x33A0A4,     // cyan
+    intensity: 0,        // 0-10, default off
+  },
+
+  spot: {
+    count: 0,            // number of spots, default off
+    color: 0x33A0A4,     // cyan
+    direction: 'both',   // 'upward' | 'outward' | 'both'
+  },
+
   // Ollama AI backend
   ollama: {
     url: 'http://localhost:11434/api/chat',

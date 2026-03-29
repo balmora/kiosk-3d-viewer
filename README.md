@@ -495,7 +495,11 @@ Create a file for personality and voice settings:
     "cameraDistance": 4.0,
     "cameraHeight": 1.2,
     "floorColor": 0x333333,
-    "ringColor": 0x00ff88
+    "ringColor": 0x00ff88,
+    "glowColor": "#33A0A4",
+    "glowIntensity": 0,
+    "spotCount": 0,
+    "spotColor": "#33A0A4"
   },
   "voice": "af_sarah",
   "animation": {
@@ -512,6 +516,59 @@ Create a file for personality and voice settings:
 | `visibility.json` | No | Outfit/mesh visibility system |
 | `character.json` in root | No | Fallback if not in model folder |
 | `visibility.json` in root | No | Fallback if not in model folder |
+
+---
+
+## Glow / Spot Lighting System
+
+The system features **glow and spot lighting** effects that add ambient floor lighting around the character.
+
+### Features
+
+- **Glow Effect**: Centered radial gradient glow under the model
+- **Spot Lights**: Point lights positioned around the floor edge
+- **Spot Dots**: Visual markers (small bright dots) on the floor
+- **Pulsing Animation**: Intensity levels 4-10 create pulse effects
+
+### Glow Intensity Behavior
+
+| Intensity | Effect |
+|-----------|--------|
+| 0 | Off |
+| 1-3 | Dim static glow |
+| 4-6 | Medium pulse (slow breathing) |
+| 7-10 | Fast pulse (energetic) |
+
+### Settings UI
+
+Open the Settings panel (gear icon) to access:
+- **Glow/Spot Intensity**: Slider 0-10
+- **Spot Count**: Number of spots around the floor edge (0 = off)
+- **Spot Direction**: Toggle between Upward / Outward / Both
+- **Color Presets**: Cyan, Blue, Purple, Pink, Red, Green
+- **RGB Sliders**: Custom color picker
+
+### Per-Character Settings
+
+Add glow/spot settings to `character.json`:
+
+```json
+{
+  "model": {
+    "glowColor": "#33A0A4",
+    "glowIntensity": 0,
+    "spotCount": 0,
+    "spotColor": "#33A0A4"
+  }
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `glowColor` | hex string | `#33A0A4` | Glow color |
+| `glowIntensity` | number (0-10) | 0 | Default glow intensity |
+| `spotCount` | number | 0 | Number of spots (0 = off) |
+| `spotColor` | hex string | inherits glowColor | Spot light/dot color |
 
 ---
 
