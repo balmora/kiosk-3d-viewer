@@ -384,19 +384,8 @@ Important: Output ONLY the JSON object, no other text.`;
     }
 
     await this._unlockAudio();
-    logger.info('Audio unlocked');
+    logger.info('Audio unlocked, greeting...');
 
-    // Skip warmup if switching models (Kokoro stays loaded)
-    if (this.skipWarmup) {
-      logger.info('Skipping warmup (model switch)');
-      this.skipWarmup = false;
-    } else {
-      logger.info('TTS warmup...');
-      await this._warmupTTS();
-      logger.info('TTS warmup done');
-    }
-
-    logger.info('Greeting...');
     this._greetUser();
   }
 
