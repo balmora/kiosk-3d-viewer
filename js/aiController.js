@@ -169,7 +169,7 @@ logger.info('TTS URLs configured:', { tts: this.ttsUrl, stream: this.kokoroUrl }
     }
 
     logger.info('Warming up TTS (making multiple requests)...');
-    const warmupTexts = ['Hello', 'Hi there', 'Testing'];
+    const warmupTexts = ['Hello', 'Hi there', 'Loading'];
     const delay = ms => new Promise(r => setTimeout(r, ms));
 
     for (let i = 0; i < warmupTexts.length; i++) {
