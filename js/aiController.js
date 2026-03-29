@@ -1,7 +1,7 @@
-// aiController.js v8
+// aiController.js v9
 import { ChatMemory } from './ChatMemory.js?v=2';
 import * as THREE from 'three';
-import { cleanTextForTTS, speakWithKokoroRaw, speakWithBrowser } from './ttsCommon.js';
+import { cleanTextForTTS, speakWithKokoroRaw, speakWithBrowser, warmupKokoro } from './ttsCommon.js';
 import { fetchWithTimeout, fetchWithRetry } from './utils.js';
 import { CONFIG, getTtsUrls } from './config.js?v=2';
 import { SettingsUI } from './settingsUI.js';
@@ -168,23 +168,14 @@ logger.info('TTS URLs configured:', { tts: this.ttsUrl, stream: this.kokoroUrl }
       return;
     }
 
-    logger.info('Warming up TTS (making multiple requests)...');
-    const warmupTexts = ['Hello', 'Hi there', 'Loading'];
-    const delay = ms => new Promise(r => setTimeout(r, ms));
+    logger.info('Warming up TTS silently...');
+    const warmupTexts = ['Hello', 'Testing audio', 'Loading'];
 
-    for (let i = 0; i < warmupTexts.length; i++) {
-      try {
-        logger.info(`TTS warmup request ${i + 1}/${warmupTexts.length}...`);
-        await speakWithKokoroRaw(warmupTexts[i], this.ttsVoice, this.ttsUrl);
-        logger.info(`TTS warmup ${i + 1} complete`);
-        if (i < warmupTexts.length - 1) {
-          await delay(500);
-        }
-      } catch (e) {
-        logger.warn(`TTS warmup ${i + 1} failed:`, e.message);
-      }
+    for (const text of warmupTexts) {
+      await warmupKokoro(text, this.ttsVoice, this.ttsUrl);
+      await new Promise(r => setTimeout(r, 300));
     }
-    logger.info('TTS warmup done');
+    logger.info('TTS warmup complete');
   }
 
   // ==================================================

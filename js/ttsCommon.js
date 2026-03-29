@@ -30,6 +30,37 @@ export function cleanTextForTTS(text) {
 }
 
 /**
+ * Silent Kokoro warmup - makes request but doesn't play audio
+ * @param {string} text - Text for TTS to process
+ * @param {string} voice - Voice ID
+ * @param {string} ttsUrl - Kokoro TTS endpoint URL
+ * @returns {Promise<void>}
+ */
+export async function warmupKokoro(text, voice, ttsUrl) {
+  const cleanText = cleanTextForTTS(text);
+  if (!cleanText) return;
+
+  try {
+    const response = await fetchWithRetry(() =>
+      fetchWithTimeout(ttsUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: cleanText,
+          voice: voice,
+          speed: 1.0,
+        })
+      }, 10000), 2);
+
+    if (response.ok) {
+      await response.blob();
+    }
+  } catch (e) {
+    console.warn('[Kokoro] Warmup failed:', e.message);
+  }
+}
+
+/**
  * Raw Kokoro TTS - throws on error, does not catch
  * Use when caller wants to handle fallback
  * @param {string} text - Text to speak
