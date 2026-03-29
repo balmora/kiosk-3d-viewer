@@ -12,9 +12,27 @@ export class VisibilityManager {
     this.model = model;
     this.config = visibilityConfig || {};
     this.currentOutfit = 'default';
+    this._allMeshes = [];
+    
+    // Find and store all meshes
+    this._discoverMeshes();
     
     // Initialize mesh visibility from config
     this._initVisibility();
+  }
+
+  /**
+   * Discover all meshes in the model
+   */
+  _discoverMeshes() {
+    this._allMeshes = [];
+    this.model.traverse((child) => {
+      if (child.isMesh && child.name) {
+        this._allMeshes.push({ name: child.name, mesh: child });
+        logger.info(`VisibilityManager: Found mesh "${child.name}"`);
+      }
+    });
+    logger.info(`VisibilityManager: Total meshes found: ${this._allMeshes.length}`);
   }
 
   /**
@@ -27,13 +45,14 @@ export class VisibilityManager {
       const mesh = this._findMesh(meshName);
       if (mesh) {
         mesh.visible = settings.visible !== false;
+        logger.info(`VisibilityManager: Set "${meshName}" visible=${mesh.visible}`);
       }
     }
     
     // Apply default outfit if specified
     if (this.config.outfits?.default) {
       this.currentOutfit = 'default';
-      this._applyOutfit('default');
+      this.switchOutfit('default');
     }
   }
 
@@ -41,28 +60,27 @@ export class VisibilityManager {
    * Find a mesh by name in the model hierarchy
    */
   _findMesh(meshName) {
-    let found = null;
+    const searchName = meshName.toLowerCase();
     
-    this.model.traverse((child) => {
-      if (child.name && child.name.toLowerCase() === meshName.toLowerCase()) {
-        found = child;
+    // First try exact match
+    for (const { name, mesh } of this._allMeshes) {
+      if (name.toLowerCase() === searchName) {
+        return mesh;
       }
-    });
-    
-    // Also check without case sensitivity for partial matches
-    if (!found) {
-      this.model.traverse((child) => {
-        if (child.name && child.name.toLowerCase().includes(meshName.toLowerCase())) {
-          found = child;
-        }
-      });
     }
     
-    if (!found) {
-      logger.debug(`VisibilityManager: Mesh "${meshName}" not found in model`);
+    // Then try partial match (contains)
+    for (const { name, mesh } of this._allMeshes) {
+      if (name.toLowerCase().includes(searchName) || searchName.includes(name.toLowerCase())) {
+        logger.debug(`VisibilityManager: Partial match "${meshName}" -> "${name}"`);
+        return mesh;
+      }
     }
     
-    return found;
+    logger.warn(`VisibilityManager: Mesh "${meshName}" not found in model`);
+    logger.debug(`VisibilityManager: Available meshes: ${this._allMeshes.map(m => m.name).join(', ')}`);
+    
+    return null;
   }
 
   /**
@@ -76,9 +94,11 @@ export class VisibilityManager {
       return false;
     }
     
+    logger.info(`VisibilityManager: Switching to outfit "${outfitName}"`);
+    
     // Hide all meshes first
-    const allMeshes = this.config.meshes || {};
-    for (const meshName of Object.keys(allMeshes)) {
+    const configuredMeshes = this.config.meshes || {};
+    for (const meshName of Object.keys(configuredMeshes)) {
       const mesh = this._findMesh(meshName);
       if (mesh) {
         mesh.visible = false;
@@ -91,9 +111,9 @@ export class VisibilityManager {
       const mesh = this._findMesh(meshName);
       if (mesh) {
         mesh.visible = true;
+        logger.info(`VisibilityManager: Showing mesh "${meshName}"`);
       } else {
-        // If mesh doesn't exist, just log it (model might not have it)
-        logger.debug(`VisibilityManager: Mesh "${meshName}" not found (outfit: ${outfitName})`);
+        logger.warn(`VisibilityManager: Mesh "${meshName}" not found for outfit "${outfitName}"`);
       }
     }
     
@@ -248,5 +268,111 @@ Instructions:
    */
   hasOutfit(outfitName) {
     return !!this.config.outfits?.[outfitName];
+  }
+
+  /**
+   * Toggle a mesh's visibility
+   */
+  toggleMesh(meshName) {
+    const mesh = this._findMesh(meshName);
+    if (mesh) {
+      mesh.visible = !mesh.visible;
+      logger.info(`VisibilityManager: Toggled "${meshName}" to visible=${mesh.visible}`);
+      return mesh.visible;
+    }
+    return null;
+  }
+
+  /**
+   * Set a mesh's visibility
+   */
+  setMeshVisibility(meshName, visible) {
+    const mesh = this._findMesh(meshName);
+    if (mesh) {
+      mesh.visible = visible;
+      logger.info(`VisibilityManager: Set "${meshName}" visible=${visible}`);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Get all meshes with their current visibility
+   */
+  getAllMeshes() {
+    return this._allMeshes.map(({ name, mesh }) => ({
+      name: name,
+      visible: mesh.visible,
+      description: this.config.meshes?.[name]?.description || ''
+    }));
+  }
+
+  /**
+   * Build UI for mesh toggles
+   */
+  buildToggleUI() {
+    const panel = document.createElement('div');
+    panel.id = 'visibilityPanel';
+    panel.style.cssText = `
+      position: fixed;
+      top: 70px;
+      right: 20px;
+      background: rgba(0,0,0,0.9);
+      border-radius: 12px;
+      padding: 15px;
+      z-index: 200;
+      min-width: 200px;
+      font-family: sans-serif;
+    `;
+
+    const header = document.createElement('div');
+    header.style.cssText = 'color: #ff69b4; font-size: 14px; margin-bottom: 10px; font-weight: bold;';
+    header.textContent = '🎭 Meshes';
+    panel.appendChild(header);
+
+    const meshes = this.getAllMeshes();
+    
+    for (const m of meshes) {
+      const row = document.createElement('label');
+      row.style.cssText = 'display: flex; align-items: center; gap: 8px; color: #ddd; font-size: 12px; margin: 5px 0; cursor: pointer;';
+      
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = m.visible;
+      checkbox.dataset.meshName = m.name;
+      checkbox.style.cssText = 'cursor: pointer;';
+      checkbox.addEventListener('change', () => {
+        this.setMeshVisibility(m.name, checkbox.checked);
+      });
+
+      const desc = m.description ? ` - ${m.description}` : '';
+      row.innerHTML = `<span>${m.name}${desc}</span>`;
+      row.insertBefore(checkbox, row.firstChild);
+      
+      panel.appendChild(row);
+    }
+
+    document.body.appendChild(panel);
+    return panel;
+  }
+
+  /**
+   * Remove toggle UI
+   */
+  removeToggleUI() {
+    const panel = document.getElementById('visibilityPanel');
+    if (panel) panel.remove();
+  }
+
+  /**
+   * Toggle visibility UI
+   */
+  toggleUI() {
+    const existing = document.getElementById('visibilityPanel');
+    if (existing) {
+      existing.remove();
+    } else {
+      this.buildToggleUI();
+    }
   }
 }
