@@ -355,3 +355,50 @@ export const DEFAULT_CHARACTER_SHEET = {
     { text: "She enjoys listening to classical music while reading", category: "interest", confidence: 0.8 }
   ]
 };
+
+/**
+ * Visibility/Outfit Configuration Schema
+ * 
+ * Stored in: ./models/<ModelName>/visibility.json
+ * Controls which meshes are visible and outfit switching
+ * 
+ * Example structure:
+ * {
+ *   "model": "ModelName",
+ *   "meshes": {
+ *     "mesh_name": { "visible": true/false },
+ *     ...
+ *   },
+ *   "outfits": {
+ *     "outfit_name": {
+ *       "meshes": ["mesh1", "mesh2"],
+ *       "description": "Description for AI context",
+ *       "tags": ["tag1", "tag2"]
+ *     },
+ *     ...
+ *   },
+ *   "time_rules": {
+ *     "HH:MM": "outfit_name"
+ *   },
+ *   "topic_keywords": {
+ *     "keyword": "outfit_name"
+ *   }
+ * }
+ * 
+ * CHAT COMMANDS:
+ * - "wardrobe" or "outfits" - List available outfits
+ * - "wear <name>" - Switch to specific outfit (user command overrides time rules)
+ * - "suggest outfit" - AI-powered outfit suggestion based on conversation
+ * 
+ * MESH NAMING:
+ * - Meshes must match names in the GLTF model
+ * - Partial name matching is supported (e.g., "armor" matches "combat_armor")
+ * 
+ * TIME RULES:
+ * - Format: "HH:MM" -> "outfit_name"
+ * - Applied when current time is within 30 minutes of the rule time
+ * 
+ * TOPIC KEYWORDS:
+ * - Map conversation keywords to outfit suggestions
+ * - Used by AI to make contextual suggestions
+ */

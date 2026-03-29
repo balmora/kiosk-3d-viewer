@@ -6,6 +6,7 @@ import { loadModel }           from './modelLoader.js';
 import { AnimationController } from './animationController.js';
 import { LipSync }             from './lipSync.js';
 import { AIController }        from './aiController.js';
+import { VisibilityManager }   from './VisibilityManager.js';
 import { CONFIG }              from './config.js';
 import { modelManager }        from './ModelManager.js';
 
@@ -131,6 +132,21 @@ async function init() {
   aiController.ttsVoice = voiceConfig;
   aiController.headBobIntensity = animConfig.headBobIntensity;
 
+  // Load visibility/wardrobe configuration
+  let visibilityManager = null;
+  try {
+    const visibilityPath = `./models/${defaultModel.name}/visibility.json?v=${Date.now()}`;
+    const visibilityResponse = await fetch(visibilityPath);
+    if (visibilityResponse.ok) {
+      const visibilityConfig = await visibilityResponse.json();
+      visibilityManager = new VisibilityManager(model, visibilityConfig);
+      aiController.setVisibilityManager(visibilityManager);
+      console.log('VisibilityManager loaded for:', defaultModel.name);
+    }
+  } catch (e) {
+    console.log('No visibility config found for:', defaultModel.name);
+  }
+
   if (characterSheet?.facts && characterSheet.facts.length > 0) {
     const characterName = characterSheet.identity?.name || 'unknown';
     for (const fact of characterSheet.facts) {
@@ -156,7 +172,8 @@ async function init() {
     animController, 
     lipSync, 
     aiController,
-    modelManager
+    modelManager,
+    visibilityManager
   };
 
   const clock = new THREE.Clock();

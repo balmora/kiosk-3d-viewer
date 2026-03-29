@@ -51,6 +51,9 @@ logger.info('TTS URLs configured:', { tts: this.ttsUrl, stream: this.kokoroUrl }
     this.ttsVoice    = CONFIG.tts.voice;
     this.headBobIntensity = CONFIG.animation.headBobIntensity;
 
+    // Visibility/Wardrobe manager (optional)
+    this.visibilityManager = null;
+
     // Fact extraction debouncing
     this.lastFactExtraction = 0;
     this.factExtractionDebounceMs = CONFIG.memory.factExtractionDebounceMs || 30000;
@@ -902,7 +905,20 @@ Important: Output ONLY the JSON object, no other text.`;
   async _handleMessage(text) {
     const lower  = text.toLowerCase();
     
-    // Check for model switch command first
+    // Check for visibility/wardrobe commands
+    if (this.visibilityManager) {
+      const wardrobeResponse = await this._handleWardrobeCommand(text);
+      if (wardrobeResponse) {
+        this._addToHistory('user', text);
+        this._addToHistory('assistant', wardrobeResponse);
+        this._updateHistoryPanel();
+        this._saveHistory();
+        await this._speak(wardrobeResponse);
+        return;
+      }
+    }
+    
+    // Check for model switch command
     const switchTarget = this._detectSwitchCommand(text);
     if (switchTarget) {
       const response = await this._handleModelSwitch(switchTarget);
@@ -1214,6 +1230,118 @@ Important: Output ONLY the JSON object, no other text.`;
     }
     return { keyword: 'talk', anim: 'talk', emoji: 'speak' };
   }
+
+  // ==================================================
+  //  WARDROBE / VISIBILITY COMMANDS
+  // ==================================================
+
+  async _handleWardrobeCommand(text) {
+    if (!this.visibilityManager) return null;
+
+    const lower = text.toLowerCase().trim();
+
+    // Wardrobe command - list available outfits
+    if (lower === 'wardrobe' || lower === 'outfits' || lower === 'what can i wear' || lower === 'show outfits') {
+      return this._handleWardrobeList();
+    }
+
+    // Suggest outfit command
+    if (lower.includes('suggest outfit') || lower.includes('what should i wear') || lower.includes('recommend outfit')) {
+      return await this._handleOutfitSuggestion();
+    }
+
+    // Wear command - switch to specific outfit
+    const wearMatch = lower.match(/^wear\s+(.+)$/);
+    if (wearMatch) {
+      return this._handleWearCommand(wearMatch[1]);
+    }
+
+    // Change outfit variations
+    const changeMatch = lower.match(/^change\s+(?:to\s+)?(.+)$/);
+    if (changeMatch && !this._detectSwitchCommand(text)) {
+      return this._handleWearCommand(changeMatch[1]);
+    }
+
+    return null;
+  }
+
+  _handleWardrobeList() {
+    const outfits = this.visibilityManager.getAvailableOutfits();
+    const current = this.visibilityManager.getCurrentOutfit();
+
+    if (outfits.length === 0) {
+      return "I don't have any outfits available right now.";
+    }
+
+    let response = "Here are my available outfits:\n";
+    for (const outfit of outfits) {
+      const marker = outfit.name === current ? ' (wearing)' : '';
+      response += `- ${outfit.name}: ${outfit.description}${marker}\n`;
+    }
+    response += "\nJust say 'wear [outfit name]' to change.";
+
+    return response;
+  }
+
+  _handleWearCommand(outfitName) {
+    const normalizedName = outfitName.toLowerCase().trim();
+
+    // Check if outfit exists
+    if (!this.visibilityManager.hasOutfit(normalizedName)) {
+      const outfits = this.visibilityManager.getAvailableOutfits();
+      const similar = outfits.find(o => 
+        o.name.toLowerCase().includes(normalizedName) || 
+        normalizedName.includes(o.name.toLowerCase())
+      );
+      
+      if (similar) {
+        return this._changeOutfit(similar.name);
+      }
+      
+      const outfitList = outfits.map(o => o.name).join(', ');
+      return `I don't have an outfit called '${outfitName}'. Available: ${outfitList}`;
+    }
+
+    return this._changeOutfit(normalizedName);
+  }
+
+  _changeOutfit(outfitName) {
+    const success = this.visibilityManager.switchOutfit(outfitName);
+    
+    if (success) {
+      return `Changed to ${outfitName}.`;
+    } else {
+      return `Sorry, I couldn't change to ${outfitName}.`;
+    }
+  }
+
+  async _handleOutfitSuggestion() {
+    try {
+      const suggestion = await this.visibilityManager.suggestOutfitViaAI(
+        this.chatHistory,
+        this.ollamaUrl,
+        this.ollamaModel
+      );
+
+      if (suggestion.outfit && suggestion.outfit !== this.visibilityManager.getCurrentOutfit()) {
+        const response = `Based on our conversation, I suggest changing to ${suggestion.outfit}. Want me to?`;
+        // Store the suggestion for follow-up
+        this.pendingOutfitSuggestion = suggestion.outfit;
+        return response;
+      } else if (suggestion.reason === 'Current outfit is appropriate') {
+        return "My current outfit feels right for the moment.";
+      } else {
+        return "I'm not sure a change is needed right now.";
+      }
+    } catch (error) {
+      logger.error('Outfit suggestion failed:', error);
+      return "I couldn't come up with an outfit suggestion right now.";
+    }
+  }
+
+  // ==================================================
+  //  MODEL SWITCH COMMANDS
+  // ==================================================
 
   _detectSwitchCommand(text) {
     const lower = text.toLowerCase().trim();
