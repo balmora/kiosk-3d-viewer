@@ -80,6 +80,7 @@ kiosk-3d-viewer/
 │ ├── config.js
 │ ├── modelLoader.js
 │ ├── ModelManager.js ← multi-model support
+│ ├── VisibilityManager.js ← outfit/visibility system
 │ ├── animationController.js
 │ ├── lipSync.js
 │ ├── aiController.js
@@ -91,10 +92,12 @@ kiosk-3d-viewer/
 └── models/
     └── Luna/
         ├── Luna.gltf ← 3D model
-        └── character.json ← personality sheet
+        ├── character.json ← personality sheet
+        └── visibility.json ← outfit definitions
     └── 2B/
-        ├── 2B.gltf ← 3D model
-        └── character.json ← personality sheet
+        ├── 2B.glb ← 3D model
+        ├── character.json ← personality sheet
+        └── visibility.json ← outfit definitions
 ```
 ---
 
@@ -305,6 +308,79 @@ memory: {
 ### Privacy
 
 All data is stored locally in the browser's localStorage. No data is sent to external servers beyond the local Ollama instance. Profiles can be cleared using the trash button in the chat UI.
+
+---
+
+## Outfit / Visibility System
+
+The system supports **outfit switching** - changing which meshes are visible on the 3D model. This allows the character to change clothes, add accessories, or switch between different appearances.
+
+### Folder Structure
+
+```
+/models/
+├── Luna/
+│   ├── Luna.gltf
+│   ├── character.json (optional)
+│   └── visibility.json (optional)
+└── 2B/
+    ├── 2B.glb
+    ├── character.json (optional)
+    └── visibility.json (optional)
+```
+
+### Visibility Configuration
+
+The `visibility.json` file defines which meshes are visible and which outfits are available:
+
+```json
+{
+  "model": "Luna",
+  "meshes": {
+    "body": { "visible": true },
+    "casual_outfit": { "visible": false },
+    "armor": { "visible": false }
+  },
+  "outfits": {
+    "default": {
+      "meshes": ["body"],
+      "description": "Base appearance without additional clothing",
+      "tags": ["bare", "default"]
+    },
+    "casual": {
+      "meshes": ["body", "casual_outfit"],
+      "description": "Comfortable everyday clothing",
+      "tags": ["casual", "relaxed"]
+    }
+  },
+  "time_rules": {
+    "21:00": "pjs",
+    "06:00": "default"
+  }
+}
+```
+
+### Chat Commands
+
+| Command | Action |
+|---------|--------|
+| `wardrobe` or `outfits` | List available outfits |
+| `wear <name>` | Switch to specific outfit |
+| `suggest outfit` | Get AI-powered suggestion |
+
+### How It Works
+
+1. **Mesh names** in visibility.json must match names in your GLTF model
+2. **Outfits** define which meshes to show/hide
+3. **User commands override** time-based rules
+4. **AI suggestions** analyze conversation context
+
+### Adding Outfits to Your Model
+
+1. Add meshes to your GLTF model in Blender with descriptive names
+2. Create `visibility.json` in your model's folder
+3. List mesh names and outfit configurations
+4. Mesh partial name matching is supported (e.g., "armor" matches "combat_armor")
 
 ---
 
