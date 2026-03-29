@@ -142,8 +142,9 @@ async function init() {
     modelManager
   };
 
-  // Trigger browser audio policy by dispatching a synthetic click
-  document.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  // Trigger browser audio policy
+  const sendBtn = document.getElementById('aiSend');
+  sendBtn?.click();
 
   const clock = new THREE.Clock();
   function animate() {
