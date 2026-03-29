@@ -110,6 +110,11 @@ logger.info('TTS URLs configured:', { tts: this.ttsUrl, stream: this.kokoroUrl }
     this.settingsUI = new SettingsUI(this);
   }
 
+  setVisibilityManager(vm) {
+    this.visibilityManager = vm;
+    console.log('VisibilityManager set on AIController:', vm ? 'yes' : 'no');
+  }
+
   // ==================================================
   //  VOICE PRELOAD
   // ==================================================
