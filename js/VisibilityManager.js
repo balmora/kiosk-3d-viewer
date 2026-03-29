@@ -26,13 +26,15 @@ export class VisibilityManager {
    */
   _discoverMeshes() {
     this._allMeshes = [];
+    let unnamedCount = 0;
     this.model.traverse((child) => {
-      if (child.isMesh && child.name) {
-        this._allMeshes.push({ name: child.name, mesh: child });
-        logger.info(`VisibilityManager: Found mesh "${child.name}"`);
+      if (child.isMesh) {
+        const name = child.name || `unnamed_${unnamedCount++}`;
+        this._allMeshes.push({ name: name, mesh: child });
+        logger.info(`VisibilityManager: Found mesh "${name}"`);
       }
     });
-    logger.info(`VisibilityManager: Total meshes found: ${this._allMeshes.length}`);
+    logger.info(`VisibilityManager: Total meshes found: ${this._allMeshes.length} (${unnamedCount} unnamed)`);
   }
 
   /**
@@ -300,11 +302,17 @@ Instructions:
    * Get all meshes with their current visibility
    */
   getAllMeshes() {
-    return this._allMeshes.map(({ name, mesh }) => ({
-      name: name,
+    const meshes = this._allMeshes.map(({ name, mesh }) => ({
+      name: name || 'unnamed',
       visible: mesh.visible,
       description: this.config.meshes?.[name]?.description || ''
     }));
+    
+    if (meshes.length === 0) {
+      logger.warn('VisibilityManager: No meshes found in model!');
+    }
+    
+    return meshes;
   }
 
   /**
@@ -331,6 +339,13 @@ Instructions:
     panel.appendChild(header);
 
     const meshes = this.getAllMeshes();
+    
+    if (meshes.length === 0) {
+      const emptyMsg = document.createElement('div');
+      emptyMsg.style.cssText = 'color: #888; font-size: 12px;';
+      emptyMsg.textContent = 'No meshes found - check console';
+      panel.appendChild(emptyMsg);
+    }
     
     for (const m of meshes) {
       const row = document.createElement('label');

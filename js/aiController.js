@@ -504,6 +504,8 @@ Important: Output ONLY the JSON object, no other text.`;
     meshBtn.addEventListener('click', () => {
       if (this.visibilityManager) {
         this.visibilityManager.toggleUI();
+      } else {
+        console.log('No visibility manager available');
       }
     });
     aiUi.appendChild(meshBtn);
