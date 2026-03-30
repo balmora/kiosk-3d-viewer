@@ -62,6 +62,11 @@ Type in the chat box to talk to Luna, or use these commands:
 | `nod` | Nod in agreement |
 | `dance` | Dance animation |
 | `think` | Thinking pose |
+| `casual` | Switch to casual outfit |
+| `formal` | Switch to formal outfit |
+| `combat` | Switch to combat outfit |
+| `swimwear` | Switch to swimwear outfit |
+| `sleepwear` | Switch to sleepwear outfit |
 
 ---
 
