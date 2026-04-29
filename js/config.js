@@ -108,7 +108,9 @@ export const CONFIG = {
     summaryInterval: 20,
     maxMessagesWithSummary: 5,
     summarizationDebounceMs: 60000,
-    defaultPrivacy: 'private'  // 'private', 'shared', or 'public'
+    defaultPrivacy: 'private',  // 'private', 'shared', or 'public'
+    useServerStorage: true,    // Use server API instead of localStorage
+    apiUrl: localStorage.getItem('api_url') || 'http://localhost:8090'
   }
 };
 
@@ -137,4 +139,21 @@ export function getTtsUrls() {
 export function getLogLevel(levelStr) {
   const levels = { debug: 0, info: 1, warn: 2, error: 3 };
   return levels[levelStr] || 1;
+}
+
+/**
+ * Set the memory API URL
+ */
+export function setMemoryApiUrl(url) {
+  url = url.replace(/\/+$/, '');
+  localStorage.setItem('api_url', url);
+  CONFIG.memory.apiUrl = url;
+  console.log('[CONFIG] Memory API URL set to:', url);
+}
+
+/**
+ * Get the current memory API URL
+ */
+export function getMemoryApiUrl() {
+  return CONFIG.memory.apiUrl;
 }

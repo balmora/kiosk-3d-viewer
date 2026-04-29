@@ -1,18 +1,18 @@
 import { CONFIG } from './config.js?v=2';
 
 /**
- * ChatMemory - Multi-profile persistent memory system
+ * ChatMemory - Multi-profile persistent memory system with server storage
  * 
  * Storage Architecture:
- * - Current: localStorage (simple, sync, 5MB limit)
- * - Future: IndexedDB via adapter pattern
+ * - Server: SQLite via memory_server.py (port 8090)
+ * - Local: Chat history cached in memory
  * 
  * Memory Scopes:
- * - 'user': Facts about the user (private by default)
- * - 'character': Facts about the AI persona (public by default)
+ * - 'model': Facts about the model/character (shared across all users)
+ * - 'user': Facts about the user (private to this user)
  * 
  * Privacy Levels:
- * - 'private': Only visible within this profile
+ * - 'private': Only visible within this user's profile
  * - 'shared': Visible to all users, attributed to source
  * - 'public': No attribution, visible to all
  */
@@ -21,22 +21,37 @@ export class ChatMemory {
   constructor(storageKey = 'luna_chat_history', maxHistory = 10) {
     this.storageKey = storageKey;
     this.maxHistory = maxHistory;
-    this.profiles = {};
-    this.activeProfileKey = null;
-    this._activeProfile = null;
     this._aiController = null;
     this._characterName = null;
+    this._useServer = CONFIG?.memory?.useServerStorage ?? true;
+    this._serverAvailable = false;
+    this._apiUrl = CONFIG?.memory?.apiUrl || 'http://localhost:8090';
 
-    // Per-profile state (will be populated from _activeProfile)
+    // Local state (not synced to server)
     this.chatHistory = [];
+    this.messageCount = 0;
+
+    // Server state
+    this.currentUserId = null;
+    this.currentUserName = null;
+    this.currentModelId = null;
+    this.currentSessionId = null;
+
+    // User info
     this.userInfo = {
       name: null,
       lastVisit: null,
       visitCount: 0,
     };
-    this.userFacts = [];    // Facts about the user (scope: user)
-    this.characterFacts = []; // Facts about the character (scope: character)
+
+    // Memories
+    this.modelMemories = [];  // Shared memories about the model
+    this.userMemories = [];   // Private memories about this user
     this.memorySummary = '';
+
+    // Aliases for compatibility with aiController.js
+    this.userFacts = [];       // Alias for userMemories
+    this.characterFacts = [];  // Alias for modelMemories
   }
 
   setAI(aiController) {
@@ -44,227 +59,291 @@ export class ChatMemory {
   }
 
   setCharacterName(name) {
-    this._characterName = name ? name.toLowerCase() : null;
+    this._characterName = name ? name.toLowerCase() : 'default';
+    this.currentModelId = this._characterName;
   }
 
-  _getRawData() {
-    try {
-      const raw = localStorage.getItem(this.storageKey);
-      return raw ? JSON.parse(raw) : null;
-    } catch (e) {
-      console.error('Failed to load chat storage:', e);
-      return null;
-    }
+  setApiUrl(url) {
+    url = url.replace(/\/+$/, '');
+    this._apiUrl = url;
+    localStorage.setItem('api_url', url);
+    CONFIG.memory.apiUrl = url;
+    console.log('[ChatMemory] API URL set to:', url);
   }
 
-  _getAllData() {
+  getApiUrl() {
+    return this._apiUrl;
+  }
+
+  // ============ Server Communication ============
+
+  async _apiRequest(endpoint, options = {}) {
+    const url = `${this._apiUrl}${endpoint}`;
     try {
-      const raw = localStorage.getItem(this.storageKey);
-      if (!raw) {
-        return { version: 2, profiles: {}, activeProfile: null };
+      const response = await fetch(url, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          ...options.headers,
+        },
+      });
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
       }
-      const data = JSON.parse(raw);
-      // Ensure required fields exist
-      if (!data.version) data.version = 2;
-      if (!data.profiles) data.profiles = {};
-      if (!data.activeProfile) data.activeProfile = null;
-      return data;
+      return await response.json();
     } catch (e) {
-      console.error('Failed to load chat storage:', e);
-      return { version: 2, profiles: {}, activeProfile: null };
+      console.warn('[ChatMemory] API request failed:', e.message);
+      this._serverAvailable = false;
+      throw e;
     }
   }
 
-  _saveAllData(data) {
+  async _checkServer() {
     try {
-      localStorage.setItem(this.storageKey, JSON.stringify(data));
-      console.log('All profiles saved:', Object.keys(data.profiles || {}).length, 'profiles');
+      await this._apiRequest('/api/ping');
+      this._serverAvailable = true;
+      console.log('[ChatMemory] Server connected:', this._apiUrl);
+      return true;
     } catch (e) {
-      console.error('Failed to save all profiles:', e);
+      this._serverAvailable = false;
+      console.warn('[ChatMemory] Server not available');
+      return false;
     }
   }
 
-  _normalizeProfileKey(key) {
-    return key ? key.toLowerCase().trim().replace(/\s+/g, '_') : 'default';
-  }
+  // ============ Session Management ============
 
-  _ensureDefaultProfile() {
-    if (!this.profiles) {
-      this.profiles = {};
-    }
-    if (!this.profiles.default) {
-      this.profiles.default = this._createEmptyProfile();
-    }
-  }
+  async load() {
+    // Check server connection
+    await this._checkServer();
 
-  _createEmptyProfile() {
-    return {
-      chatHistory: [],
-      userInfo: { name: null, lastVisit: null, visitCount: 0 },
-      messageCount: 0,
-      memorySummary: '',
-      userFacts: [],
-      characterFacts: []  // Facts about the character (scope: character)
-    };
-  }
-
-  _loadActiveProfileState() {
-    if (!this.activeProfileKey) {
-      this.activeProfileKey = 'default';
-    }
-    if (!this.profiles[this.activeProfileKey]) {
-      console.warn(`Profile "${this.activeProfileKey}" not found, creating it`);
-      this.profiles[this.activeProfileKey] = this._createEmptyProfile();
+    if (!this._serverAvailable) {
+      console.warn('[ChatMemory] Running without server - memories will not persist');
+      return;
     }
 
-    this._activeProfile = this.profiles[this.activeProfileKey];
-    this.chatHistory = this._activeProfile.chatHistory || [];
-    this.userInfo = this._activeProfile.userInfo || { name: null, lastVisit: null, visitCount: 0 };
-    this.userFacts = this._activeProfile.userFacts || [];
-    this.characterFacts = this._activeProfile.characterFacts || [];
-    this.memorySummary = this._activeProfile.memorySummary || '';
-  }
-
-  _saveActiveProfile() {
-    if (!this._activeProfile || !this.activeProfileKey) return;
-
-    // Update the profile data from instance fields
-    this._activeProfile.chatHistory = this.chatHistory;
-    this._activeProfile.userInfo = this.userInfo;
-    this._activeProfile.userFacts = this.userFacts;
-    this._activeProfile.characterFacts = this.characterFacts;
-    this._activeProfile.memorySummary = this.memorySummary;
-
-    const allData = this._getAllData();
-    if (!allData.profiles) allData.profiles = {};
-    allData.profiles[this.activeProfileKey] = this._activeProfile;
-    allData.activeProfile = this.activeProfileKey;
-    this._saveAllData(allData);
-  }
-
-  load() {
-    const allData = this._getAllData();
-    const version = allData.version || 1;
-
-    // Migrate legacy data if needed
-    if (version < 2) {
-      console.log('Migrating legacy data to v2 format...');
-      allData.version = 2;
-      const migratedProfiles = this._migrateLegacyData(allData);
-      allData.profiles = migratedProfiles;
-      allData.activeProfile = Object.keys(migratedProfiles)[0] || 'default';
-      this._saveAllData(allData);
-    }
-
-    // Initialize profiles map from storage
-    this.profiles = allData.profiles || {};
-
-    // Ensure default profile exists (in-place modification of this.profiles)
-    this._ensureDefaultProfile();
-
-    // If we created the default profile and storage didn't have it, save it back
-    if (!allData.profiles || !allData.profiles.default) {
-      allData.profiles = this.profiles;
-      allData.activeProfile = this.activeProfileKey || 'default';
-      this._saveAllData(allData);
-    }
-
-    // Set active profile key
-    this.activeProfileKey = allData.activeProfile || 'default';
-
-    // Load active profile into instance fields
-    this._loadActiveProfileState();
-
-    // Handle visit count for active profile (only increment on new calendar day)
-    const now = new Date();
-    const lastVisitDate = this.userInfo.lastVisit
-      ? new Date(this.userInfo.lastVisit).toDateString()
-      : null;
-    const today = now.toDateString();
-
-    if (!lastVisitDate || lastVisitDate !== today) {
+    try {
+      // Update visit info
       this.userInfo.visitCount += 1;
+      this.userInfo.lastVisit = new Date().toISOString();
+
+      // Start a session
+      const session = await this._apiRequest('/api/sessions', {
+        method: 'POST',
+        body: JSON.stringify({
+          user_id: this.currentUserId,
+          model_id: this.currentModelId
+        })
+      });
+      this.currentSessionId = session.id;
+
+      // Load model memories (shared)
+      const modelMems = await this._apiRequest(
+        `/api/memories/model?model_id=${this.currentModelId}`
+      );
+      this.modelMemories = modelMems;
+      this.characterFacts = modelMems;
+
+      // Load user memories if user is known
+      if (this.currentUserId) {
+        const userMems = await this._apiRequest(
+          `/api/memories/user?user_id=${this.currentUserId}&model_id=${this.currentModelId}`
+        );
+        this.userMemories = userMems;
+        this.userFacts = userMems;
+        this.userMemories = userMems;
+      }
+
+      // Update session activity
+      this._updateSessionActivity();
+
+      console.log('[ChatMemory] Loaded:', this.modelMemories.length, 'model memories,', this.userMemories.length, 'user memories');
+    } catch (e) {
+      console.error('[ChatMemory] Load error:', e.message);
     }
-    this.userInfo.lastVisit = now.toISOString();
-
-    // Save updated visit info
-    this._saveActiveProfile();
-
-    console.log('Profile:', this.activeProfileKey);
-    console.log('History loaded:', this.chatHistory.length, 'messages');
-    console.log('User name:', this.userInfo.name);
-    console.log('Visit count:', this.userInfo.visitCount);
   }
 
-  save() {
-    this._saveActiveProfile();
+  async _updateSessionActivity() {
+    if (!this.currentSessionId || !this._serverAvailable) return;
+    try {
+      await this._apiRequest(`/api/sessions/${this.currentSessionId}`, {
+        method: 'PUT'
+      });
+    } catch (e) {
+      // Silent fail for activity updates
+    }
   }
+
+  // ============ User Management ============
+
+  async identifyUser(name) {
+    if (!this._serverAvailable) {
+      this.currentUserName = name;
+      return;
+    }
+
+    try {
+      // Try to get existing user
+      let user;
+      try {
+        user = await this._apiRequest(`/api/users/name/${encodeURIComponent(name)}`);
+      } catch (e) {
+        // User not found, create new
+        user = await this._apiRequest('/api/users', {
+          method: 'POST',
+          body: JSON.stringify({ name })
+        });
+      }
+
+      this.currentUserId = user.id;
+      this.currentUserName = user.name;
+      this.userInfo.name = user.name;
+
+      console.log('[ChatMemory] User identified:', user.name, '(id:', user.id + ')');
+    } catch (e) {
+      console.error('[ChatMemory] User identification error:', e.message);
+      this.currentUserName = name;
+    }
+  }
+
+  getCurrentUserId() {
+    return this.currentUserId;
+  }
+
+  getCurrentUserName() {
+    return this.currentUserName;
+  }
+
+  // ============ Memory Management ============
+
+  async addModelMemory(content, category = 'fact', confidence = 1.0) {
+    if (!content || !this._serverAvailable) return;
+
+    const memory = {
+      type: 'model',
+      model_id: this.currentModelId,
+      category,
+      content,
+      confidence,
+      source_user_id: this.currentUserId
+    };
+
+    try {
+      const result = await this._apiRequest('/api/memories', {
+        method: 'POST',
+        body: JSON.stringify(memory)
+      });
+
+      // Add to local cache
+      this.modelMemories.unshift({
+        ...memory,
+        id: result.id,
+        type: 'model'
+      });
+      this.characterFacts = this.modelMemories;
+
+      console.log('[ChatMemory] Added model memory:', content.substring(0, 50) + '...');
+    } catch (e) {
+      console.error('[ChatMemory] Failed to add model memory:', e.message);
+    }
+  }
+
+  async addUserMemory(content, category = 'fact') {
+    if (!content || !this._serverAvailable || !this.currentUserId) return;
+
+    const memory = {
+      type: 'user',
+      user_id: this.currentUserId,
+      model_id: this.currentModelId,
+      category,
+      content
+    };
+
+    try {
+      const result = await this._apiRequest('/api/memories', {
+        method: 'POST',
+        body: JSON.stringify(memory)
+      });
+
+      // Add to local cache
+      this.userMemories.unshift({
+        ...memory,
+        id: result.id,
+        type: 'user'
+      });
+      this.userFacts = this.userMemories;
+
+      console.log('[ChatMemory] Added user memory:', content.substring(0, 50) + '...');
+    } catch (e) {
+      console.error('[ChatMemory] Failed to add user memory:', e.message);
+    }
+  }
+
+  getModelMemories() {
+    return this.modelMemories || [];
+  }
+
+  getUserMemories() {
+    return this.userMemories || [];
+  }
+
+  getAllMemoriesForPrompt() {
+    const parts = [];
+
+    // Model memories (shared facts)
+    const modelFacts = this.modelMemories
+      .filter(m => m.category === 'fact')
+      .slice(0, 5)
+      .map(m => m.content);
+
+    if (modelFacts.length > 0) {
+      parts.push('Facts about ' + (this._characterName || 'the character') + ':\n' + modelFacts.map(f => '- ' + f).join('\n'));
+    }
+
+    // User memories (user facts)
+    const userFacts = this.userMemories
+      .filter(m => m.category === 'fact')
+      .slice(0, 5)
+      .map(m => m.content);
+
+    if (userFacts.length > 0) {
+      parts.push('Facts about the user:\n' + userFacts.map(f => '- ' + f).join('\n'));
+    }
+
+    // Memory summary
+    if (this.memorySummary) {
+      parts.push('Conversation summary:\n' + this.memorySummary);
+    }
+
+    return parts.join('\n\n');
+  }
+
+  // ============ Chat History (Local) ============
 
   add(messageRole, content) {
     this.chatHistory.push({ role: messageRole, content });
-
-    // Increment message count for summarization
-    if (this._activeProfile) {
-      this._activeProfile.messageCount = (this._activeProfile.messageCount || 0) + 1;
-    }
+    this.messageCount += 1;
 
     if (this.chatHistory.length > this.maxHistory * 2) {
       this.chatHistory = this.chatHistory.slice(-this.maxHistory);
     }
-    this.save();
-    console.log('History length:', this.chatHistory.length);
+
+    // Update session activity periodically
+    if (this.messageCount % 5 === 0) {
+      this._updateSessionActivity();
+    }
+
+    console.log('[ChatMemory] History length:', this.chatHistory.length);
   }
 
-  maybeSummarize() {
-    if (!this._aiController || !CONFIG.memory.summaryInterval) return false;
-
-    const interval = CONFIG.memory.summaryInterval;
-    // Check if we should summarize (every N messages, but only after we have enough history)
-    if (this._activeProfile &&
-        this._activeProfile.messageCount >= interval &&
-        this._activeProfile.messageCount % interval === 0) {
-      // Trigger summary generation (fire-and-forget)
-      this._activeProfile.messageCount = 0; // Reset counter to avoid repeated triggers
-      this.generateSummary().catch(err =>
-        logger.warn('Summarization failed:', err.message)
-      );
-      return true;
-    }
-    return false;
+  getHistory() {
+    return this.chatHistory;
   }
 
-  async generateSummary() {
-    if (!this._aiController || !this.chatHistory.length) return;
-
-    try {
-      const summary = await this._aiController._summarizeConversation(this.chatHistory);
-      if (summary) {
-        this.memorySummary = summary;
-        this._activeProfile.memorySummary = summary;
-        // Trim chat history to keep only recent messages for context
-        const keep = CONFIG.memory.maxMessagesWithSummary || 5;
-        this.chatHistory = this.chatHistory.slice(-keep);
-        this._saveActiveProfile();
-        logger.info('Conversation summary generated:', summary.substring(0, 100) + '...');
-      }
-    } catch (e) {
-      logger.error('Summarization error:', e.message);
-      // Restore message count so we can retry later
-      if (this._activeProfile) {
-        this._activeProfile.messageCount += CONFIG.memory.summaryInterval;
-      }
-    }
-  }
-
-  clear() {
-    if (this.activeProfileKey && this.profiles[this.activeProfileKey]) {
-      this.profiles[this.activeProfileKey] = this._createEmptyProfile();
-      this._loadActiveProfileState();
-      this._saveAllData(this.profiles);
-    } else {
-      localStorage.removeItem(this.storageKey);
-    }
-    console.log('Profile cleared:', this.activeProfileKey);
+  clearHistory() {
+    this.chatHistory = [];
+    this.messageCount = 0;
+    console.log('[ChatMemory] History cleared');
   }
 
   getMaxHistory() {
@@ -275,129 +354,11 @@ export class ChatMemory {
     this.maxHistory = max;
   }
 
-  // ============ Profile Management ============
-
-  getProfiles() {
-    return Object.keys(this.profiles);
-  }
-
-  getActiveProfile() {
-    return this.activeProfileKey;
-  }
-
-  getProfile(key) {
-    const normalized = this._normalizeProfileKey(key);
-    return this.profiles[normalized] || null;
-  }
-
-  createProfile(key, options = {}) {
-    const normalized = this._normalizeProfileKey(key);
-    if (this.profiles[normalized]) {
-      console.warn(`Profile "${normalized}" already exists`);
-      return false;
-    }
-
-    this.profiles[normalized] = {
-      chatHistory: [],
-      userInfo: {
-        name: options.name || key,
-        lastVisit: null,
-        visitCount: 0
-      },
-      messageCount: 0,
-      memorySummary: '',
-      userFacts: [],
-      characterFacts: []
-    };
-    const allData = this._getAllData();
-    allData.profiles[normalized] = this.profiles[normalized];
-    this._saveAllData(allData);
-    console.log(`Created profile: ${normalized}`);
-    return true;
-  }
-
-  switchProfile(key) {
-    const normalized = this._normalizeProfileKey(key);
-    if (!this.profiles[normalized]) {
-      console.warn(`Profile "${normalized}" not found, creating it automatically`);
-      this.profiles[normalized] = this._createEmptyProfile();
-    }
-
-    this.activeProfileKey = normalized;
-    this._loadActiveProfileState();
-    this._saveActiveProfile();
-    console.log(`Switched to profile: ${normalized}`);
-    return true;
-  }
-
-  detectProfileFromName(name) {
-    const normalized = this._normalizeProfileKey(name);
-    return this.profiles[normalized] ? normalized : null;
-  }
-
-  detectOrCreateProfile(name) {
-    const normalized = this._normalizeProfileKey(name);
-    if (!this.profiles[normalized]) {
-      this.createProfile(normalized, { name });
-    }
-    if (this.activeProfileKey !== normalized) {
-      this.switchProfile(normalized);
-    }
-    return normalized;
-  }
-
   // ============ Fact Extraction ============
-
-  mergeFact(newFact, options = {}) {
-    if (!this._activeProfile || !newFact || !newFact.text) return;
-
-    // Determine scope and target
-    const scope = newFact.scope || 'user';
-    const targetCharacter = newFact.targetCharacter || this._characterName;
-    const defaultPrivacy = CONFIG?.memory?.defaultPrivacy || 'private';
-    const privacy = newFact.privacy || (scope === 'user' ? defaultPrivacy : 'public');
-
-    // Create fact with all required fields
-    const enrichedFact = {
-      ...newFact,
-      scope,
-      privacy,
-      targetCharacter,
-      id: newFact.id || Date.now().toString(),
-      createdAt: newFact.createdAt || new Date().toISOString(),
-      lastUpdated: new Date().toISOString()
-    };
-
-    // Determine which array to use based on scope
-    const factsArray = scope === 'user' ? 'userFacts' : 'characterFacts';
-    const facts = this._activeProfile[factsArray] || [];
-
-    const existingIndex = facts.findIndex(
-      f => f.text.toLowerCase() === enrichedFact.text.toLowerCase()
-    );
-
-    if (existingIndex >= 0) {
-      const existing = facts[existingIndex];
-      if (enrichedFact.confidence > existing.confidence) {
-        facts[existingIndex] = enrichedFact;
-      }
-    } else {
-      facts.push(enrichedFact);
-    }
-
-    // Enforce maxFacts limit
-    const maxFacts = CONFIG?.memory?.maxFacts || 10;
-    if (facts.length > maxFacts) {
-      facts.sort((a, b) => a.confidence - b.confidence);
-      this._activeProfile[factsArray] = facts.slice(-maxFacts);
-    } else {
-      this._activeProfile[factsArray] = facts;
-    }
-  }
 
   async extractFacts(userText) {
     if (!this._aiController || !CONFIG?.memory?.factExtractionEnabled) {
-      return Promise.resolve();
+      return;
     }
 
     try {
@@ -407,60 +368,151 @@ export class ChatMemory {
         this.mergeFact(fact, { scope: 'user', privacy: 'private' });
       }
       if (facts.length > 0) {
-        this._saveActiveProfile();
-        logger.debug('Extracted', facts.length, 'user facts');
+        console.log('[ChatMemory] Extracted', facts.length, 'user facts');
       }
     } catch (e) {
-      logger.warn('Fact extraction skipped:', e.message);
+      console.warn('[ChatMemory] Fact extraction skipped:', e.message);
     }
-    return Promise.resolve();
+  }
+
+  mergeFact(newFact, options = {}) {
+    if (!newFact || !newFact.text) return;
+
+    const scope = newFact.scope || 'user';
+    const privacy = newFact.privacy || (scope === 'user' ? 'private' : 'public');
+
+    const enrichedFact = {
+      ...newFact,
+      scope,
+      privacy,
+      id: newFact.id || Date.now().toString(),
+      createdAt: newFact.createdAt || new Date().toISOString(),
+    };
+
+    const memories = scope === 'user' ? this.userMemories : this.modelMemories;
+
+    const newText = (enrichedFact.text || '').toLowerCase();
+    const existingIndex = memories.findIndex(
+      f => (f.content || '').toLowerCase() === newText
+    );
+
+    if (existingIndex >= 0) {
+      const existing = memories[existingIndex];
+      if (enrichedFact.confidence > (existing.confidence || 0)) {
+        memories[existingIndex] = enrichedFact;
+      }
+    } else {
+      memories.push(enrichedFact);
+    }
+
+    // Enforce maxFacts limit
+    const maxFacts = CONFIG?.memory?.maxFacts || 10;
+    if (memories.length > maxFacts) {
+      memories.sort((a, b) => (a.confidence || 0) - (b.confidence || 0));
+      const trimmed = memories.slice(-maxFacts);
+      if (scope === 'user') {
+        this.userMemories = trimmed;
+        this.userFacts = trimmed;
+      } else {
+        this.modelMemories = trimmed;
+        this.characterFacts = trimmed;
+      }
+    } else {
+      // Keep aliases in sync
+      if (scope === 'user') {
+        this.userFacts = this.userMemories;
+      } else {
+        this.characterFacts = this.modelMemories;
+      }
+    }
+
+    // Sync to server
+    if (scope === 'user' && this.currentUserId) {
+      this.addUserMemory(enrichedFact.text, enrichedFact.category || 'fact');
+    } else if (scope === 'model') {
+      this.addModelMemory(enrichedFact.text, enrichedFact.category || 'fact', enrichedFact.confidence);
+    }
+  }
+
+  // ============ Summarization ============
+
+  async generateSummary() {
+    if (!this._aiController || !this.chatHistory.length) return;
+
+    try {
+      const summary = await this._aiController._summarizeConversation(this.chatHistory);
+      if (summary) {
+        this.memorySummary = summary;
+        // Trim chat history to keep only recent messages for context
+        const keep = CONFIG.memory.maxMessagesWithSummary || 5;
+        this.chatHistory = this.chatHistory.slice(-keep);
+        console.log('[ChatMemory] Conversation summary generated');
+      }
+    } catch (e) {
+      console.error('[ChatMemory] Summarization error:', e.message);
+    }
+  }
+
+  maybeSummarize() {
+    if (!this._aiController || !CONFIG.memory.summaryInterval) return false;
+
+    const interval = CONFIG.memory.summaryInterval;
+    if (this.messageCount >= interval && this.messageCount % interval === 0) {
+      this.messageCount = 0;
+      this.generateSummary().catch(err =>
+        console.warn('[ChatMemory] Summarization failed:', err.message)
+      );
+      return true;
+    }
+    return false;
   }
 
   // ============ Character Facts ============
 
   addCharacterFact(fact) {
-    this.mergeFact(fact, { scope: 'character', privacy: 'public' });
-    this._saveActiveProfile();
+    this.mergeFact(fact, { scope: 'model', privacy: 'public' });
   }
 
   getCharacterFacts() {
-    return this.characterFacts || [];
+    return this.modelMemories.filter(m => m.category === 'fact');
   }
 
   getCharacterFactsForPrompt() {
     const facts = this.getCharacterFacts();
     if (facts.length === 0) return '';
-    
+
     const topFacts = facts
       .filter(f => f.privacy === 'public' || f.privacy === 'shared')
-      .sort((a, b) => b.confidence - a.confidence)
       .slice(0, 5);
-    
+
     if (topFacts.length === 0) return '';
-    
-    return topFacts.map(f => `- ${f.text}`).join('\n');
+
+    return topFacts.map(f => '- ' + f.content).join('\n');
   }
 
-  // ============ Migration ============
+  // ============ Compatibility Methods ============
+  // Methods expected by aiController.js
 
-  _migrateLegacyData(oldData) {
-    const profiles = {};
+  getActiveProfile() {
+    return this.currentUserName || 'anonymous';
+  }
 
-    const legacyProfile = {
-      chatHistory: (oldData.history || []).slice(-this.maxHistory),
-      userInfo: {
-        name: oldData.userInfo?.name || null,
-        lastVisit: oldData.userInfo?.lastVisit || null,
-        visitCount: oldData.userInfo?.visitCount || 0
-      },
-      messageCount: oldData.history ? oldData.history.length : 0,
-      memorySummary: '',
-      userFacts: [],
-      characterFacts: []
-    };
+  detectOrCreateProfile(name) {
+    this.identifyUser(name);
+    return name;
+  }
 
-    profiles.default = legacyProfile;
-    console.log('Migrated legacy data to profile: default');
-    return profiles;
+  clear() {
+    this.clearHistory();
+    this.modelMemories = [];
+    this.userMemories = [];
+    this.characterFacts = [];
+    this.userFacts = [];
+    this.memorySummary = '';
+    console.log('[ChatMemory] All data cleared');
+  }
+
+  save() {
+    // No-op for server mode - data is saved via API calls
   }
 }

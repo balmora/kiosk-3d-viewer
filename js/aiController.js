@@ -429,8 +429,8 @@ Important: Output ONLY the JSON object, no other text.`;
     this.chatMemory.save();
   }
 
-  _loadHistory() {
-    this.chatMemory.load();
+  async _loadHistory() {
+    await this.chatMemory.load();
     this._syncFromMemory();
   }
 

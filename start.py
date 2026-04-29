@@ -305,25 +305,41 @@ def main():
         input("\nPress Enter to exit...")
         sys.exit(1)
 
-    # Open browser
-    url = "http://localhost:8080"
-    print(f"[..] Opening browser: {url}")
-    try:
-        webbrowser.open(url)
-        print("[OK] Browser opened (or check your browser manually)")
-        print()
-    except Exception as e:
-        print(f"[WARN] Could not open browser automatically: {e}")
-        print(f"  Please open {url} manually")
-        print()
+    # Start Memory Server (SQLite API)
+    print("[..] Starting memory server...")
+    if check_port(8090):
+        print("[OK] Memory server already running on port 8090")
+    else:
+        memory_script = os.path.join(script_dir, 'memory_server.py')
+        if os.path.exists(memory_script):
+            try:
+                memory_proc = subprocess.Popen(
+                    [sys.executable, memory_script],
+                    cwd=script_dir,
+                    start_new_session=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE
+                )
+                print("[OK] Memory server started on port 8090")
+            except Exception as e:
+                print(f"[WARN] Could not start memory server: {e}")
+        else:
+            print(f"[WARN] memory_server.py not found at {memory_script}")
+    print()
+
+    # Web server is running, user opens browser manually
+    print(f"[OK] Web server ready at http://localhost:8080")
+    print("[..] Open your browser manually")
+    print()
 
     print("=" * 50)
     print("  All services are running!")
     print("=" * 50)
     print("  Services:")
-    print("    Ollama : http://localhost:11434")
-    print("    Kokoro : http://localhost:8000")
-    print("    Viewer : http://localhost:8080")
+    print("    Ollama   : http://localhost:11434")
+    print("    Kokoro   : http://localhost:8000")
+    print("    Memory   : http://localhost:8090")
+    print("    Viewer   : http://localhost:8080")
     print("=" * 50)
     print()
     print("Press Ctrl+C to stop all services")
