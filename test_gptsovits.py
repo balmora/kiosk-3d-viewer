@@ -314,16 +314,46 @@ def setup_gpt_sovits():
         print("[WARN] Dependency install had issues, continuing anyway...")
     print()
     
-    # Step 3: Download models
+    # Step 3: Fix torchcodec issue
+    print("[..] Fixing audio loading (soundfile workaround)...")
+    tts_file = os.path.join(GPT_SOVITS_DIR, 'GPT_SoVITS', 'TTS_infer_pack', 'TTS.py')
+    if os.path.exists(tts_file):
+        with open(tts_file, 'r', encoding='utf-8') as f:
+            content = f.read()
+        if 'import soundfile as sf' not in content:
+            content = content.replace('import torchaudio\nfrom tqdm', 'import torchaudio\nimport soundfile as sf\nfrom tqdm')
+            content = content.replace(
+                'raw_audio, raw_sr = torchaudio.load(ref_audio_path)\n        raw_audio = raw_audio.to(self.configs.device).float()',
+                "raw_audio_np, raw_sr = sf.read(ref_audio_path, dtype='float32')\n        raw_audio = torch.from_numpy(raw_audio_np).unsqueeze(0) if raw_audio_np.ndim == 1 else torch.from_numpy(raw_audio_np.T)\n        raw_audio = raw_audio.to(self.configs.device).float()"
+            )
+            with open(tts_file, 'w', encoding='utf-8') as f:
+                f.write(content)
+            print("[OK] Audio loading patched to use soundfile")
+        else:
+            print("[OK] Audio loading already patched")
+    print()
+    
+    # Step 4: Download NLTK data
+    print("[..] Downloading NLTK data...")
+    try:
+        import nltk
+        nltk.download('averaged_perceptron_tagger_eng', quiet=True)
+        nltk.download('punkt_tab', quiet=True)
+        print("[OK] NLTK data downloaded")
+    except Exception as e:
+        print(f"[WARN] NLTK download failed: {e}")
+    print()
+    
+    # Step 5: Download models
     if not download_pretrained_models():
         print("[WARN] Some models may be missing, continuing anyway...")
     print()
     
-    # Step 4: Start API
+    # Step 6: Start API
     if not start_gpt_sovits_api():
         return False
     
-    # Step 5: Wait for API
+    # Step 7: Wait for API
     print()
     return wait_for_gpt_sovits(timeout=120)
 
@@ -470,29 +500,45 @@ def print_setup_instructions():
     print("""
 If auto-install fails, follow these steps:
 
-1. Install conda (if not installed):
+1. Install Miniconda (if not installed):
    https://docs.anaconda.com/miniconda/
 
 2. Create environment:
    conda create -n gptsovits python=3.10
    conda activate gptsovits
+   conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
+   conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+   conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/msys2
 
-3. Clone repository:
+3. Install build tools and dependencies:
+   conda install -c conda-forge ffmpeg cmake "ffmpeg>=7.0,<8.0"
+   pip install pyopenjtalk>=0.4.1
+
+4. Install CUDA PyTorch:
+   pip uninstall torch torchaudio -y
+   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu126
+
+5. Clone repository:
    git clone https://github.com/RVC-Boss/GPT-SoVITS gptsovits
    cd gptsovits
 
-4. Install dependencies:
+6. Install dependencies:
    pip install -r requirements.txt
 
-5. Download pretrained V4 models:
-   From: https://huggingface.co/lj1995/GPT-SoVITS/tree/main
-   Files needed in gsv-v4-pretrained/:
-   - s1v3.ckpt
-   - s2v4.pth
-   - vocoder.pth
+7. Fix torchcodec issue (if needed):
+   - Edit GPT_SoVITS/TTS_infer_pack/TTS.py
+   - Add: import soundfile as sf
+   - Replace torchaudio.load() with soundfile.read() in _get_ref_spec()
 
-6. Start API server:
-   python api_v2.py -p 9880
+8. Download NLTK data:
+   python -c "import nltk; nltk.download('averaged_perceptron_tagger_eng'); nltk.download('punkt_tab')"
+
+9. Download pretrained models from:
+   https://huggingface.co/XXXXRT/GPT-SoVITS-Pretrained
+   Extract to: GPT_SoVITS/pretrained_models/
+
+10. Start API server:
+    python api_v2.py -p 9880
 """)
     print("=" * 50)
 
